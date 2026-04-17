@@ -1,7 +1,7 @@
 # Requirements: Git Diff Review TUI
 
 **Defined:** 2026-04-17
-**Core Value:** Make reviewing local git changes fast, clear, and precise — with syntax-highlighted diffs and staging controls at any granularity.
+**Core Value:** Make reviewing local git changes fast, clear, and precise -- with syntax-highlighted diffs and staging controls at any granularity.
 
 ## v1 Requirements
 
@@ -76,28 +76,28 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| VIEW-01 | — | Pending |
-| VIEW-02 | — | Pending |
-| VIEW-03 | — | Pending |
-| VIEW-04 | — | Pending |
-| VIEW-05 | — | Pending |
-| VIEW-06 | — | Pending |
-| VIEW-07 | — | Pending |
-| VIEW-08 | — | Pending |
-| VIEW-09 | — | Pending |
-| STAG-01 | — | Pending |
-| STAG-02 | — | Pending |
-| STAG-03 | — | Pending |
-| STAG-04 | — | Pending |
-| INTR-01 | — | Pending |
-| INTR-02 | — | Pending |
-| INTR-03 | — | Pending |
+| VIEW-01 | Phase 1 | Pending |
+| VIEW-02 | Phase 1 | Pending |
+| VIEW-03 | Phase 1 | Pending |
+| VIEW-04 | Phase 2 | Pending |
+| VIEW-05 | Phase 1 | Pending |
+| VIEW-06 | Phase 1 | Pending |
+| VIEW-07 | Phase 1 | Pending |
+| VIEW-08 | Phase 2 | Pending |
+| VIEW-09 | Phase 3 | Pending |
+| STAG-01 | Phase 3 | Pending |
+| STAG-02 | Phase 3 | Pending |
+| STAG-03 | Phase 3 | Pending |
+| STAG-04 | Phase 3 | Pending |
+| INTR-01 | Phase 2 | Pending |
+| INTR-02 | Phase 2 | Pending |
+| INTR-03 | Phase 1 | Pending |
 
 **Coverage:**
 - v1 requirements: 16 total
-- Mapped to phases: 0
-- Unmapped: 16
+- Mapped to phases: 16
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-17*
-*Last updated: 2026-04-17 after initial definition*
+*Last updated: 2026-04-17 after roadmap creation*
