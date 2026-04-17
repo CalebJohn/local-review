@@ -25,7 +25,7 @@
   5. User can press q to exit cleanly with terminal state fully restored
 **Plans:** 2 plans
 Plans:
-- [ ] 01-01-PLAN.md — Project scaffold, git service layer (owned types), and diff computation module
+- [x] 01-01-PLAN.md — Project scaffold, git service layer (owned types), and diff computation module
 - [ ] 01-02-PLAN.md — TEA app model, event loop, sidebar + diff view UI rendering
 **UI hint**: yes
 
