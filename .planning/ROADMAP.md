@@ -26,7 +26,7 @@
 **Plans:** 2 plans
 Plans:
 - [x] 01-01-PLAN.md — Project scaffold, git service layer (owned types), and diff computation module
-- [ ] 01-02-PLAN.md — TEA app model, event loop, sidebar + diff view UI rendering
+- [x] 01-02-PLAN.md — TEA app model, event loop, sidebar + diff view UI rendering
 **UI hint**: yes
 
 ### Phase 2: Diff Polish + Interaction
