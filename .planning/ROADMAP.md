@@ -23,7 +23,10 @@
   3. User sees an inline diff with line numbers, green for additions, red for deletions
   4. User sees the working tree diff for unstaged files and the index diff for staged files, determined automatically by sidebar selection
   5. User can press q to exit cleanly with terminal state fully restored
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 01-01-PLAN.md — Project scaffold, git service layer (owned types), and diff computation module
+- [ ] 01-02-PLAN.md — TEA app model, event loop, sidebar + diff view UI rendering
 **UI hint**: yes
 
 ### Phase 2: Diff Polish + Interaction
@@ -55,7 +58,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation + File Navigation | 0/? | Not started | - |
+| 1. Foundation + File Navigation | 0/2 | Planned | - |
 | 2. Diff Polish + Interaction | 0/? | Not started | - |
 | 3. Staging Controls | 0/? | Not started | - |
 
