@@ -567,7 +567,7 @@ fn render_diff_view(frame: &mut Frame, app: &App, area: Rect) {
 | A3 | `ratatui::init()` is available in 0.30.0 (introduced ~0.28) | Architecture Patterns | Low -- fallback is manual Terminal::new() + panic hook |
 | A4 | `Layout::horizontal()` shorthand available in 0.30.0 | State of the Art | Low -- fallback is Layout::default().direction(Direction::Horizontal) |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Scroll behavior for diff view**
    - What we know: ratatui `Paragraph` can be scrolled with `.scroll((y_offset, 0))`
