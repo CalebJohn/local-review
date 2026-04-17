@@ -1,0 +1,9 @@
+[package]
+name = "git-diff-tui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ratatui = "0.30.0"
+git2 = "0.20.4"
+similar = "2.7.0"
