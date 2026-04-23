@@ -1,0 +1,14 @@
+ARG BASE_IMAGE=space-jam-base
+FROM ${BASE_IMAGE}
+
+USER root
+RUN npm install -g opencode-ai
+RUN npx get-shit-done-cc --opencode --global
+
+USER node
+WORKDIR /workspace
+
+ENV PATH=/home/node/.npm/_npx/bin:$PATH
+ENV NODE_ENV=development
+
+CMD ["opencode"]
