@@ -1,0 +1,13 @@
+ARG BASE_IMAGE=space-jam-base
+FROM ${BASE_IMAGE}
+
+USER root
+RUN npm install -g @anthropic-ai/claude-code \
+ && npx get-shit-done-cc --claude --global
+
+USER node
+WORKDIR /workspace
+
+ENV NODE_ENV=development
+
+CMD ["claude", "--dangerously-skip-permissions"]
