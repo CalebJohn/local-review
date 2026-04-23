@@ -805,27 +805,27 @@ N/A — this is a greenfield phase (new functionality, no rename/refactor/migrat
 
 **If this table looks like it should be empty:** Every cell above represents genuine uncertainty. The planner should carry A1 and A6 into Wave 0 smoke tests, and A7 into the initial `cargo build` verification.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should the Ui rect-tracking be stored on App, or should the event handler recompute Layout?**
    - What we know: Both approaches work. Recomputing is simpler (no new App state, no `&mut App` in view).
    - What's unclear: Slight perf cost of recomputing Layout every mouse event — but Layout is pure math, <1 µs.
-   - Recommendation: Recompute in event handler. Simpler. Phase 1's pure-view contract stays intact.
+   - RESOLVED: Recompute in event handler. Simpler. Phase 1's pure-view contract stays intact.
 
 2. **Should hunk nav `n`/`N` also be available in Focus::Sidebar, auto-switching focus to DiffView?**
    - What we know: gitui requires focus on diff panel first.
    - What's unclear: User ergonomics.
-   - Recommendation: v1 = Focus::DiffView only (matches gitui). Reconsider based on UAT feedback.
+   - RESOLVED: v1 = Focus::DiffView only (matches gitui). Reconsider based on UAT feedback.
 
 3. **Do we want a subtle background tint on added/deleted lines (so we can still show syntax fg on them)?**
    - What we know: Delta and some newer tools do this; classical `git diff` does not.
    - What's unclear: Terminal color support is uneven (some 16-color terminals mangle bg tints).
-   - Recommendation: Out of scope for Phase 2 v1. Stick with "syntax on equal lines only." Revisit if UAT asks.
+   - RESOLVED: Out of scope for Phase 2 v1. Stick with "syntax on equal lines only." Revisit if UAT asks.
 
 4. **Should we highlight tokens within the `@@ -x +y @@` hunk header?**
    - What we know: Phase 1 colors it cyan as a single span.
    - What's unclear: No benefit to tokenizing it.
-   - Recommendation: Leave as-is.
+   - RESOLVED: Leave as-is.
 
 ## Environment Availability
 
