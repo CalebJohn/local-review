@@ -2,8 +2,8 @@ ARG BASE_IMAGE=space-jam-base
 FROM ${BASE_IMAGE}
 
 USER root
-RUN npm install -g @anthropic-ai/claude-code \
- && npx get-shit-done-cc --claude --global
+RUN npm install -g @anthropic-ai/claude-code
+RUN npx get-shit-done-cc --claude --local
 
 USER node
 WORKDIR /workspace
