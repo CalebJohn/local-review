@@ -2,6 +2,7 @@ use crate::diff::types::DiffContent;
 use crate::diff::{binary_diff_content, compute_diff_content};
 use crate::git::GitRepo;
 use crate::git::types::{ContentResult, FileEntry};
+use crate::syntax::{build_styled_diff, StyledDiffContent};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Focus {
@@ -18,6 +19,10 @@ pub enum Message {
     ScrollDiffDown,
     SwitchFocus,
     Quit,
+    NextHunk,
+    PrevHunk,
+    MouseClickSidebar(usize),
+    FocusDiff,
 }
 
 pub struct App {
@@ -28,6 +33,8 @@ pub struct App {
     pub diff_scroll: u16,
     pub focus: Focus,
     pub should_quit: bool,
+    pub styled_diff: Option<StyledDiffContent>,
+    pub hunk_line_starts: Vec<u16>,
 }
 
 impl App {
@@ -42,6 +49,8 @@ impl App {
             diff_scroll: 0,
             focus: Focus::Sidebar,
             should_quit: false,
+            styled_diff: None,
+            hunk_line_starts: Vec::new(),
         };
         if !app.files.is_empty() {
             app.load_diff_for_selected();
@@ -51,6 +60,8 @@ impl App {
 
     fn load_diff_for_selected(&mut self) {
         self.diff_scroll = 0;
+        self.styled_diff = None;
+        self.hunk_line_starts = Vec::new();
 
         if self.selected_index >= self.files.len() {
             self.diff_content = None;
@@ -103,6 +114,12 @@ impl App {
         };
 
         self.diff_content = Some(compute_diff_content(path, old_text, new_text));
+
+        // Populate styled_diff and hunk_line_starts after diff_content is set
+        if let Some(dc) = &self.diff_content {
+            self.styled_diff = build_styled_diff(dc, old_text, new_text);
+            self.hunk_line_starts = compute_hunk_line_starts(self.diff_content.as_ref());
+        }
     }
 
     pub fn update(&mut self, msg: Message) {
@@ -147,6 +164,26 @@ impl App {
             Message::Quit => {
                 self.should_quit = true;
             }
+            Message::NextHunk => {
+                if let Some(&next) = self.hunk_line_starts.iter().find(|&&s| s > self.diff_scroll) {
+                    self.diff_scroll = next;
+                }
+            }
+            Message::PrevHunk => {
+                if let Some(&prev) = self.hunk_line_starts.iter().rev().find(|&&s| s < self.diff_scroll) {
+                    self.diff_scroll = prev;
+                }
+            }
+            Message::MouseClickSidebar(idx) => {
+                if idx < self.files.len() {
+                    self.selected_index = idx;
+                    self.focus = Focus::Sidebar;
+                    self.load_diff_for_selected();
+                }
+            }
+            Message::FocusDiff => {
+                self.focus = Focus::DiffView;
+            }
         }
     }
 
@@ -163,9 +200,22 @@ impl App {
     }
 }
 
+pub fn compute_hunk_line_starts(dc: Option<&DiffContent>) -> Vec<u16> {
+    let Some(dc) = dc else { return Vec::new(); };
+    if dc.is_binary { return Vec::new(); }
+    let mut starts: Vec<u16> = Vec::with_capacity(dc.hunks.len());
+    let mut cum: u16 = 0;
+    for h in &dc.hunks {
+        starts.push(cum);
+        cum = cum.saturating_add(1u16.saturating_add(h.lines.len() as u16));
+    }
+    starts
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::diff::types::ChangeKind;
     use crate::git::types::{FileEntry, FileStatus};
 
     fn staged_only_entry() -> FileEntry {
@@ -196,6 +246,8 @@ mod tests {
             diff_scroll: 0,
             focus: Focus::Sidebar,
             should_quit: false,
+            styled_diff: None,
+            hunk_line_starts: Vec::new(),
         }
     }
 
@@ -286,5 +338,122 @@ mod tests {
         assert_eq!(app.diff_scroll, 0);
         app.update(Message::ScrollDiffUp);
         assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_styled_diff_starts_none() {
+        let app = test_app_with_files(vec![]);
+        assert!(app.styled_diff.is_none());
+    }
+
+    #[test]
+    fn test_load_diff_for_selected_clears_styled_diff_on_empty_file_list() {
+        let mut app = test_app_with_files(vec![]);
+        app.styled_diff = Some(StyledDiffContent {
+            lines_by_old_lineno: std::collections::HashMap::new(),
+            lines_by_new_lineno: std::collections::HashMap::new(),
+        });
+        app.load_diff_for_selected();
+        assert!(app.styled_diff.is_none());
+    }
+
+    #[test]
+    fn test_compute_hunk_line_starts_empty_none() {
+        assert_eq!(compute_hunk_line_starts(None), Vec::<u16>::new());
+    }
+
+    #[test]
+    fn test_compute_hunk_line_starts_binary() {
+        use crate::diff::types::DiffContent;
+        let dc = DiffContent { path: "x".to_string(), hunks: vec![], is_binary: true };
+        assert_eq!(compute_hunk_line_starts(Some(&dc)), Vec::<u16>::new());
+    }
+
+    #[test]
+    fn test_compute_hunk_line_starts_three_hunks() {
+        use crate::diff::types::{DiffContent, DiffHunk, DiffLine};
+        let hunks = vec![
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }] },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(3), new_lineno: Some(3), content: "x\n".to_string() }] },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(3), new_lineno: Some(3), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(4), new_lineno: Some(4), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(5), new_lineno: Some(5), content: "x\n".to_string() }] },
+        ];
+        let dc = DiffContent { path: "t.rs".to_string(), hunks, is_binary: false };
+        assert_eq!(compute_hunk_line_starts(Some(&dc)), vec![0u16, 3, 7]);
+    }
+
+    #[test]
+    fn test_next_hunk_no_op_on_empty() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.diff_scroll = 0;
+        app.update(Message::NextHunk);
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_next_hunk_advances_to_next_start() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.hunk_line_starts = vec![0, 3, 7];
+        app.diff_scroll = 0;
+        app.update(Message::NextHunk);
+        assert_eq!(app.diff_scroll, 3);
+        app.update(Message::NextHunk);
+        assert_eq!(app.diff_scroll, 7);
+        app.update(Message::NextHunk);
+        assert_eq!(app.diff_scroll, 7);
+    }
+
+    #[test]
+    fn test_prev_hunk_no_op_at_first() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.hunk_line_starts = vec![0, 3, 7];
+        app.diff_scroll = 0;
+        app.update(Message::PrevHunk);
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_prev_hunk_goes_to_previous_start() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.hunk_line_starts = vec![0, 3, 7];
+        app.diff_scroll = 7;
+        app.update(Message::PrevHunk);
+        assert_eq!(app.diff_scroll, 3);
+        app.update(Message::PrevHunk);
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_mouse_click_sidebar_selects_file() {
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            unstaged_entry(),
+            staged_only_entry(),
+        ]);
+        app.focus = Focus::DiffView;
+        app.update(Message::MouseClickSidebar(2));
+        assert_eq!(app.selected_index, 2);
+        assert_eq!(app.focus, Focus::Sidebar);
+    }
+
+    #[test]
+    fn test_mouse_click_sidebar_out_of_bounds_noop() {
+        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        app.focus = Focus::DiffView;
+        let before = app.selected_index;
+        app.update(Message::MouseClickSidebar(99));
+        assert_eq!(app.selected_index, before);
+        assert_eq!(app.focus, Focus::DiffView);
+    }
+
+    #[test]
+    fn test_focus_diff_sets_focus_to_diffview() {
+        let mut app = test_app_with_files(vec![]);
+        assert_eq!(app.focus, Focus::Sidebar);
+        app.update(Message::FocusDiff);
+        assert_eq!(app.focus, Focus::DiffView);
     }
 }

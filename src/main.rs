@@ -1,14 +1,24 @@
 mod app;
 mod diff;
 mod git;
+mod syntax;
 mod ui;
 
 use app::{App, Focus, Message};
-use ratatui::crossterm::event::{self, Event, KeyCode, KeyEventKind};
+use ratatui::crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
+    MouseButton, MouseEvent, MouseEventKind,
+};
+use ratatui::crossterm::execute;
+use ratatui::layout::{Constraint, Layout, Rect};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::init();
+    execute!(std::io::stdout(), EnableMouseCapture)?;
+
     let result = run(&mut terminal);
+
+    let _ = execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
     result
 }
@@ -18,31 +28,48 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
     loop {
         terminal.draw(|frame| ui::view(frame, &app))?;
 
-        if let Event::Key(key) = event::read()? {
-            // CRITICAL: Filter for KeyEventKind::Press to avoid duplicate events
-            if key.kind == KeyEventKind::Press {
-                let msg = match app.focus {
-                    Focus::Sidebar => match key.code {
-                        KeyCode::Char('q') => Some(Message::Quit),
-                        KeyCode::Char('j') | KeyCode::Down => Some(Message::MoveDown),
-                        KeyCode::Char('k') | KeyCode::Up => Some(Message::MoveUp),
-                        KeyCode::Enter => Some(Message::SelectFile),
-                        KeyCode::Tab => Some(Message::SwitchFocus),
-                        _ => None,
-                    },
-                    Focus::DiffView => match key.code {
-                        KeyCode::Char('q') => Some(Message::Quit),
-                        KeyCode::Char('j') | KeyCode::Down => Some(Message::ScrollDiffDown),
-                        KeyCode::Char('k') | KeyCode::Up => Some(Message::ScrollDiffUp),
-                        KeyCode::Tab => Some(Message::SwitchFocus),
-                        KeyCode::Esc => Some(Message::SwitchFocus),
-                        _ => None,
-                    },
-                };
+        match event::read()? {
+            Event::Key(key) => {
+                if key.kind == KeyEventKind::Press {
+                    let msg = match app.focus {
+                        Focus::Sidebar => match key.code {
+                            KeyCode::Char('q') => Some(Message::Quit),
+                            KeyCode::Char('j') | KeyCode::Down => Some(Message::MoveDown),
+                            KeyCode::Char('k') | KeyCode::Up => Some(Message::MoveUp),
+                            KeyCode::Enter => Some(Message::SelectFile),
+                            KeyCode::Tab => Some(Message::SwitchFocus),
+                            _ => None,
+                        },
+                        Focus::DiffView => match key.code {
+                            KeyCode::Char('q') => Some(Message::Quit),
+                            KeyCode::Char('j') | KeyCode::Down => Some(Message::ScrollDiffDown),
+                            KeyCode::Char('k') | KeyCode::Up => Some(Message::ScrollDiffUp),
+                            KeyCode::Char('n') => Some(Message::NextHunk),
+                            KeyCode::Char('N') => Some(Message::PrevHunk),
+                            KeyCode::Tab => Some(Message::SwitchFocus),
+                            KeyCode::Esc => Some(Message::SwitchFocus),
+                            _ => None,
+                        },
+                    };
+                    if let Some(msg) = msg {
+                        app.update(msg);
+                    }
+                }
+            }
+            Event::Mouse(mev) => {
+                let size = terminal.size()?;
+                let area = Rect::new(0, 0, size.width, size.height);
+                let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+                    .split(area);
+                let sidebar_rect = chunks[0];
+                let diff_rect = chunks[1];
+
+                let msg = translate_mouse(mev, sidebar_rect, diff_rect);
                 if let Some(msg) = msg {
                     app.update(msg);
                 }
             }
+            _ => {}
         }
 
         if app.should_quit {
@@ -50,4 +77,126 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
         }
     }
     Ok(())
+}
+
+fn translate_mouse(mev: MouseEvent, sidebar: Rect, diff: Rect) -> Option<Message> {
+    match mev.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            if rect_contains(sidebar, mev.column, mev.row) {
+                let idx = mev.row.saturating_sub(sidebar.y.saturating_add(1)) as usize;
+                Some(Message::MouseClickSidebar(idx))
+            } else if rect_contains(diff, mev.column, mev.row) {
+                Some(Message::FocusDiff)
+            } else {
+                None
+            }
+        }
+        MouseEventKind::ScrollDown => {
+            if rect_contains(diff, mev.column, mev.row) {
+                Some(Message::ScrollDiffDown)
+            } else {
+                None
+            }
+        }
+        MouseEventKind::ScrollUp => {
+            if rect_contains(diff, mev.column, mev.row) {
+                Some(Message::ScrollDiffUp)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
+fn rect_contains(r: Rect, col: u16, row: u16) -> bool {
+    col >= r.x
+        && col < r.x.saturating_add(r.width)
+        && row >= r.y
+        && row < r.y.saturating_add(r.height)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sidebar_rect() -> Rect { Rect::new(0, 0, 30, 20) }
+    fn diff_rect() -> Rect { Rect::new(30, 0, 50, 20) }
+
+    fn mouse(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
+        MouseEvent {
+            kind,
+            column: col,
+            row,
+            modifiers: ratatui::crossterm::event::KeyModifiers::empty(),
+        }
+    }
+
+    #[test]
+    fn test_rect_contains_inside() {
+        assert!(rect_contains(sidebar_rect(), 5, 5));
+    }
+
+    #[test]
+    fn test_rect_contains_outside_right() {
+        assert!(!rect_contains(sidebar_rect(), 30, 5));
+    }
+
+    #[test]
+    fn test_rect_contains_at_origin() {
+        assert!(rect_contains(sidebar_rect(), 0, 0));
+    }
+
+    #[test]
+    fn test_translate_mouse_click_sidebar_row_3() {
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 3);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+                   Some(Message::MouseClickSidebar(2)));
+    }
+
+    #[test]
+    fn test_translate_mouse_click_sidebar_on_border_is_idx_zero() {
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 0);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+                   Some(Message::MouseClickSidebar(0)));
+    }
+
+    #[test]
+    fn test_translate_mouse_click_diff_is_focus_diff() {
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 35, 5);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+                   Some(Message::FocusDiff));
+    }
+
+    #[test]
+    fn test_translate_mouse_scroll_down_on_diff_is_scroll() {
+        let m = mouse(MouseEventKind::ScrollDown, 35, 5);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+                   Some(Message::ScrollDiffDown));
+    }
+
+    #[test]
+    fn test_translate_mouse_scroll_up_on_diff_is_scroll() {
+        let m = mouse(MouseEventKind::ScrollUp, 35, 5);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+                   Some(Message::ScrollDiffUp));
+    }
+
+    #[test]
+    fn test_translate_mouse_scroll_on_sidebar_is_noop() {
+        let m = mouse(MouseEventKind::ScrollDown, 5, 5);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()), None);
+    }
+
+    #[test]
+    fn test_translate_mouse_drag_is_noop() {
+        let m = mouse(MouseEventKind::Drag(MouseButton::Left), 5, 5);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()), None);
+    }
+
+    #[test]
+    fn test_translate_mouse_click_outside_both_rects_is_noop() {
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 200, 200);
+        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()), None);
+    }
 }

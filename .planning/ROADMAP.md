@@ -38,7 +38,11 @@ Plans:
   2. User can jump between hunks in the diff view using keyboard shortcuts (n/N or similar)
   3. User can click files in the sidebar with the mouse to select them
   4. User can click in the diff view area to interact (scroll, select position)
-**Plans**: TBD
+**Plans:** 3 plans
+Plans:
+- [x] 02-01-PLAN.md — Add tree-sitter stack (11 grammar crates + runtime + highlight engine) and scaffold src/syntax/ with HighlightRegistry, scope palette, and a smoke test that parses every grammar
+- [x] 02-02-PLAN.md — Implement byte-offset -> per-line styled span mapping, build_styled_diff, and extend App + ui.rs to render syntax colors on context (Equal) lines
+- [x] 02-03-PLAN.md — Add hunk navigation (n/N), mouse capture enable/disable, and mouse event dispatch for sidebar click and diff view scroll/click-focus
 **UI hint**: yes
 
 ### Phase 3: Staging Controls
@@ -58,10 +62,10 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation + File Navigation | 0/2 | Planned | - |
-| 2. Diff Polish + Interaction | 0/? | Not started | - |
+| 1. Foundation + File Navigation | 2/2 | Complete | - |
+| 2. Diff Polish + Interaction | 3/3 | Complete | 2026-04-23 |
 | 3. Staging Controls | 0/? | Not started | - |
 
 ---
 *Roadmap created: 2026-04-17*
-*Last updated: 2026-04-17*
+*Last updated: 2026-04-23 after Phase 2 planning*

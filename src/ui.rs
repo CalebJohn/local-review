@@ -4,6 +4,7 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use crate::app::{App, Focus};
 use crate::diff::types::{ChangeKind, DiffContent};
 use crate::git::types::{FileEntry, FileStatus};
+use crate::syntax::{StyledDiffContent, StyledSpan};
 
 pub fn view(frame: &mut ratatui::Frame, app: &App) {
     let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
@@ -108,6 +109,54 @@ fn diff_lines(diff: &DiffContent) -> Vec<Line<'static>> {
     lines
 }
 
+fn diff_lines_styled(
+    diff: &DiffContent,
+    styled: &StyledDiffContent,
+) -> Vec<Line<'static>> {
+    let mut lines: Vec<Line<'static>> = Vec::new();
+    for hunk in &diff.hunks {
+        lines.push(hunk_header_line(hunk.old_start, hunk.new_start));
+        for dl in &hunk.lines {
+            let content = dl.content.trim_end_matches('\n').to_string();
+            let (prefix, content_style) = match dl.kind {
+                ChangeKind::Equal  => (" ", Style::default()),
+                ChangeKind::Insert => ("+", Style::default().fg(Color::Green)),
+                ChangeKind::Delete => ("-", Style::default().fg(Color::Red)),
+            };
+
+            let lineno_span = Span::styled(
+                format!("{} {} ", format_lineno(dl.old_lineno), format_lineno(dl.new_lineno)),
+                Style::default().fg(Color::DarkGray),
+            );
+
+            // Only apply syntax styling on Equal lines. Keep +/- as single-span full-line color.
+            let styled_line: Option<&Vec<StyledSpan>> = match dl.kind {
+                ChangeKind::Equal => dl.new_lineno
+                    .and_then(|ln| styled.lines_by_new_lineno.get(&ln))
+                    .or_else(|| dl.old_lineno.and_then(|ln| styled.lines_by_old_lineno.get(&ln))),
+                _ => None,
+            };
+
+            let line = if let Some(spans) = styled_line {
+                let prefix_span = Span::styled(prefix.to_string(), Style::default());
+                let mut parts: Vec<Span<'static>> = Vec::with_capacity(2 + spans.len());
+                parts.push(lineno_span);
+                parts.push(prefix_span);
+                for sp in spans {
+                    parts.push(Span::styled(sp.text.clone(), sp.style));
+                }
+                Line::from(parts)
+            } else {
+                let body_span = Span::styled(format!("{}{}", prefix, content), content_style);
+                Line::from(vec![lineno_span, body_span])
+            };
+
+            lines.push(line);
+        }
+    }
+    lines
+}
+
 fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::DiffView;
     let title: String = app
@@ -141,7 +190,10 @@ fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             frame.render_widget(paragraph, area);
         }
         Some(dc) => {
-            let lines = diff_lines(dc);
+            let lines = match &app.styled_diff {
+                Some(sd) => diff_lines_styled(dc, sd),
+                None    => diff_lines(dc),
+            };
             let paragraph = Paragraph::new(lines)
                 .block(block)
                 .scroll((app.diff_scroll, 0));
