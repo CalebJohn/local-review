@@ -1,6 +1,7 @@
 pub mod types;
 
 use std::path::Path;
+use crate::diff::types::{ChangeKind, DiffHunk};
 use types::{ContentResult, FileEntry, FileStatus};
 
 pub struct GitRepo {
@@ -132,6 +133,103 @@ impl GitRepo {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(ContentResult::NotFound),
             Err(e) => Err(Box::new(e)),
         }
+    }
+
+    pub fn stage_file(&self, path: &str) -> Result<(), git2::Error> {
+        let mut index = self.repo.index()?;
+        index.add_path(std::path::Path::new(path))?;
+        index.write()?;
+        Ok(())
+    }
+
+    pub fn unstage_file(&self, path: &str) -> Result<(), git2::Error> {
+        let head = self.repo.head()?;
+        let commit = head.peel_to_commit()?;
+        self.repo.reset_default(Some(commit.as_object()), std::iter::once(Path::new(path)))?;
+        Ok(())
+    }
+
+    pub fn stage_hunk(&self, path: &str, old_content: &str, _new_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
+        let old_lines: Vec<&str> = old_content.lines().collect();
+        let mut result_lines: Vec<String> = old_lines.iter().map(|s| s.to_string()).collect();
+        
+        for line in &hunk.lines {
+            match line.kind {
+                ChangeKind::Delete => {
+                    if let Some(ln) = line.old_lineno {
+                        let idx = (ln as usize).saturating_sub(1);
+                        if idx < result_lines.len() {
+                            result_lines.remove(idx);
+                        }
+                    }
+                }
+                ChangeKind::Insert => {
+                    if let Some(ln) = line.new_lineno {
+                        let idx = (ln as usize).saturating_sub(1);
+                        let content = line.content.trim_end().to_string();
+                        if idx <= result_lines.len() {
+                            result_lines.insert(idx, content);
+                        }
+                    }
+                }
+                ChangeKind::Equal => {}
+            }
+        }
+        
+        let new_text = result_lines.join("\n");
+        let workdir = self.repo.workdir().ok_or_else(|| -> Box<dyn std::error::Error> {
+            "bare repository has no working directory".into()
+        })?;
+        
+        let full_path = workdir.join(path);
+        std::fs::write(&full_path, new_text)?;
+        
+        let mut index = self.repo.index()?;
+        index.add_path(Path::new(path))?;
+        index.write()?;
+        Ok(())
+    }
+
+    pub fn unstage_hunk(&self, path: &str, old_index_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
+        let old_lines: Vec<&str> = old_index_content.lines().collect();
+        let mut result_lines: Vec<String> = old_lines.iter().map(|s| s.to_string()).collect();
+        
+        for line in &hunk.lines {
+            match line.kind {
+                ChangeKind::Delete => {
+                    if let Some(ln) = line.old_lineno {
+                        let idx = (ln as usize).saturating_sub(1);
+                        if idx < result_lines.len() {
+                            result_lines.remove(idx);
+                        }
+                    }
+                }
+                ChangeKind::Insert => {
+                    if let Some(ln) = line.new_lineno {
+                        let idx = (ln as usize).saturating_sub(1);
+                        let content = line.content.trim_end().to_string();
+                        if idx <= result_lines.len() {
+                            result_lines.insert(idx, content);
+                        }
+                    }
+                }
+                ChangeKind::Equal => {}
+            }
+        }
+        
+        let new_text = result_lines.join("\n");
+        
+        let head = self.repo.head()?;
+        let commit = head.peel_to_commit()?;
+        self.repo.reset_default(Some(commit.as_object()), std::iter::once(Path::new(path)))?;
+        
+        let workdir = self.repo.workdir().ok_or_else(|| -> Box<dyn std::error::Error> {
+            "bare repository has no working directory".into()
+        })?;
+        let full_path = workdir.join(path);
+        std::fs::write(&full_path, new_text)?;
+        
+        Ok(())
     }
 }
 

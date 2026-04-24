@@ -23,6 +23,10 @@ pub enum Message {
     PrevHunk,
     MouseClickSidebar(usize),
     FocusDiff,
+    StageFile,
+    UnstageFile,
+    StageHunk,
+    UnstageHunk,
 }
 
 pub struct App {
@@ -35,6 +39,7 @@ pub struct App {
     pub should_quit: bool,
     pub styled_diff: Option<StyledDiffContent>,
     pub hunk_line_starts: Vec<u16>,
+    pub current_hunk_index: Option<usize>,
 }
 
 impl App {
@@ -51,6 +56,7 @@ impl App {
             should_quit: false,
             styled_diff: None,
             hunk_line_starts: Vec::new(),
+            current_hunk_index: None,
         };
         if !app.files.is_empty() {
             app.load_diff_for_selected();
@@ -184,6 +190,66 @@ impl App {
             Message::FocusDiff => {
                 self.focus = Focus::DiffView;
             }
+            Message::StageFile => {
+                if let Some(entry) = self.files.get(self.selected_index) {
+                    let _ = self.repo.stage_file(&entry.path);
+                    self.refresh_files();
+                }
+            }
+            Message::UnstageFile => {
+                if let Some(entry) = self.files.get(self.selected_index) {
+                    let _ = self.repo.unstage_file(&entry.path);
+                    self.refresh_files();
+                }
+            }
+            Message::StageHunk => {
+                if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
+                    self.files.get(self.selected_index),
+                    self.diff_content.as_ref(),
+                    self.current_hunk_index,
+                ) {
+                    if let Some(hunk) = dc.hunks.get(hunk_idx) {
+                        let old_content = self.repo.head_content(&entry.path)
+                            .ok()
+                            .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
+                        let new_content = self.repo.workdir_content(&entry.path)
+                            .ok()
+                            .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
+                        if let (Some(old), Some(new)) = (old_content, new_content) {
+                            let _ = self.repo.stage_hunk(&entry.path, &old, &new, hunk);
+                            self.refresh_files();
+                        }
+                    }
+                }
+            }
+            Message::UnstageHunk => {
+                if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
+                    self.files.get(self.selected_index),
+                    self.diff_content.as_ref(),
+                    self.current_hunk_index,
+                ) {
+                    if let Some(hunk) = dc.hunks.get(hunk_idx) {
+                        let index_content = self.repo.index_content(&entry.path)
+                            .ok()
+                            .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
+                        if let Some(idx_content) = index_content {
+                            let _ = self.repo.unstage_hunk(&entry.path, &idx_content, hunk);
+                            self.refresh_files();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn refresh_files(&mut self) {
+        if let Ok(files) = self.repo.changed_files() {
+            let selected_path = self.files.get(self.selected_index).map(|e| e.path.clone());
+            self.files = files;
+            if let Some(ref path) = selected_path {
+                self.selected_index = self.files.iter().position(|f| f.path == *path).unwrap_or(0);
+            }
+            self.load_diff_for_selected();
         }
     }
 
@@ -248,6 +314,7 @@ mod tests {
             should_quit: false,
             styled_diff: None,
             hunk_line_starts: Vec::new(),
+            current_hunk_index: None,
         }
     }
 
