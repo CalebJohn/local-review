@@ -25,7 +25,7 @@ build-ocode:
     docker build -t {{ocode_image}} -f Dockerfile.opencode --build-arg BASE_IMAGE={{base_image}} .
 
 # Enter the container running opencode
-ocode: build-ocode
+opencode: build-ocode
     docker run --rm -it \
         -v "$PWD":/workspace \
         -v space-jam-home:/home/node \
