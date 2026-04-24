@@ -60,6 +60,12 @@ Plan: 1 of 2
 
 (None)
 
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260424-001 | Split sidebar into staged and unstaged sections | 2026-04-24 | 89c3d4c | [260424-001-split-sidebar-staged-unstaged](./quick/260424-001-split-sidebar-staged-unstaged/) |
+
 ## Session Continuity
 
 ### Last Session
@@ -75,4 +81,4 @@ Plan: 1 of 2
 
 ---
 *State initialized: 2026-04-17*
-*Last updated: 2026-04-17*
+Last activity: 2026-04-24 - Completed quick task 260424-001: Split sidebar into staged and unstaged sections
