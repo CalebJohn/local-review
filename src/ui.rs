@@ -7,10 +7,13 @@ use crate::git::types::{FileEntry, FileStatus};
 use crate::syntax::{StyledDiffContent, StyledSpan};
 
 pub fn view(frame: &mut ratatui::Frame, app: &App) {
-    let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+    let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
         .split(frame.area());
-    render_sidebar(frame, app, chunks[0]);
-    render_diff_view(frame, app, chunks[1]);
+    let cols = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+        .split(rows[0]);
+    render_sidebar(frame, app, cols[0]);
+    render_diff_view(frame, app, cols[1]);
+    render_footer(frame, app, rows[1]);
 }
 
 fn status_style(entry: &FileEntry) -> Style {
@@ -155,6 +158,35 @@ fn diff_lines_styled(
         }
     }
     lines
+}
+
+fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
+    let key_style = Style::default().fg(Color::White).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let desc_style = Style::default().fg(Color::Gray);
+    let sep = Span::styled("  ", desc_style);
+
+    let spans: Vec<Span> = match app.focus {
+        Focus::Sidebar => vec![
+            Span::styled(" j/k ", key_style), Span::styled(" navigate ", desc_style), sep.clone(),
+            Span::styled(" s ", key_style), Span::styled(" stage file ", desc_style), sep.clone(),
+            Span::styled(" u ", key_style), Span::styled(" unstage file ", desc_style), sep.clone(),
+            Span::styled(" Enter ", key_style), Span::styled(" open diff ", desc_style), sep.clone(),
+            Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep,
+            Span::styled(" q ", key_style), Span::styled(" quit ", desc_style),
+        ],
+        Focus::DiffView => vec![
+            Span::styled(" n ", key_style), Span::styled(" next hunk ", desc_style), sep.clone(),
+            Span::styled(" N ", key_style), Span::styled(" prev hunk ", desc_style), sep.clone(),
+            Span::styled(" s ", key_style), Span::styled(" stage hunk ", desc_style), sep.clone(),
+            Span::styled(" u ", key_style), Span::styled(" unstage hunk ", desc_style), sep.clone(),
+            Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone(),
+            Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep,
+            Span::styled(" q ", key_style), Span::styled(" quit ", desc_style),
+        ],
+    };
+
+    let footer = Paragraph::new(Line::from(spans));
+    frame.render_widget(footer, area);
 }
 
 fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
