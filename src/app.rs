@@ -11,6 +11,12 @@ pub enum Focus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+pub enum SidebarSection {
+    Staged,
+    Unstaged,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Message {
     MoveUp,
     MoveDown,
@@ -21,7 +27,8 @@ pub enum Message {
     Quit,
     NextHunk,
     PrevHunk,
-    MouseClickSidebar(usize),
+    MouseClickStagedSidebar(usize),
+    MouseClickUnstagedSidebar(usize),
     FocusDiff,
     StageFile,
     UnstageFile,
@@ -31,8 +38,10 @@ pub enum Message {
 
 pub struct App {
     pub repo: GitRepo,
-    pub files: Vec<FileEntry>,
+    pub staged_files: Vec<FileEntry>,
+    pub unstaged_files: Vec<FileEntry>,
     pub selected_index: usize,
+    pub sidebar_section: SidebarSection,
     pub diff_content: Option<DiffContent>,
     pub diff_scroll: u16,
     pub focus: Focus,
@@ -45,11 +54,21 @@ pub struct App {
 impl App {
     pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
         let repo = GitRepo::open(".")?;
-        let files = repo.changed_files()?;
+        let all_files = repo.changed_files()?;
+        let (staged_files, unstaged_files) = Self::partition_files(&all_files);
+
+        let initial_section = if !staged_files.is_empty() {
+            SidebarSection::Staged
+        } else {
+            SidebarSection::Unstaged
+        };
+
         let mut app = App {
             repo,
-            files,
+            staged_files,
+            unstaged_files,
             selected_index: 0,
+            sidebar_section: initial_section,
             diff_content: None,
             diff_scroll: 0,
             focus: Focus::Sidebar,
@@ -58,10 +77,35 @@ impl App {
             hunk_line_starts: Vec::new(),
             current_hunk_index: None,
         };
-        if !app.files.is_empty() {
+        if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
         }
         Ok(app)
+    }
+
+    fn partition_files(files: &[FileEntry]) -> (Vec<FileEntry>, Vec<FileEntry>) {
+        let staged: Vec<FileEntry> = files
+            .iter()
+            .filter(|f| f.index_status.is_some())
+            .cloned()
+            .collect();
+        let unstaged: Vec<FileEntry> = files
+            .iter()
+            .filter(|f| f.workdir_status.is_some())
+            .cloned()
+            .collect();
+        (staged, unstaged)
+    }
+
+    pub fn current_section_files(&self) -> &[FileEntry] {
+        match self.sidebar_section {
+            SidebarSection::Staged => &self.staged_files,
+            SidebarSection::Unstaged => &self.unstaged_files,
+        }
+    }
+
+    fn selected_entry(&self) -> Option<&FileEntry> {
+        self.current_section_files().get(self.selected_index)
     }
 
     fn load_diff_for_selected(&mut self) {
@@ -69,30 +113,34 @@ impl App {
         self.styled_diff = None;
         self.hunk_line_starts = Vec::new();
 
-        if self.selected_index >= self.files.len() {
+        let files = self.current_section_files();
+        if self.selected_index >= files.len() {
             self.diff_content = None;
             return;
         }
 
-        let entry = self.files[self.selected_index].clone();
+        let entry = files[self.selected_index].clone();
         let path = entry.path.as_str();
 
-        // Determine which content sources to compare based on stage status
+        // Determine which content sources to compare based on sidebar section
         let (old_result, new_result): (
             Result<ContentResult, String>,
             Result<ContentResult, String>,
-        ) = if entry.is_staged_only() {
-            // VIEW-06: staged-only -> HEAD vs index
-            (
-                self.repo.head_content(path).map_err(|e| e.to_string()),
-                self.repo.index_content(path).map_err(|e| e.to_string()),
-            )
-        } else {
-            // VIEW-05: unstaged -> index vs workdir
-            (
-                self.repo.index_content(path).map_err(|e| e.to_string()),
-                self.repo.workdir_content(path).map_err(|e| e.to_string()),
-            )
+        ) = match self.sidebar_section {
+            SidebarSection::Staged => {
+                // Staged section: HEAD vs index
+                (
+                    self.repo.head_content(path).map_err(|e| e.to_string()),
+                    self.repo.index_content(path).map_err(|e| e.to_string()),
+                )
+            }
+            SidebarSection::Unstaged => {
+                // Unstaged section: index vs workdir
+                (
+                    self.repo.index_content(path).map_err(|e| e.to_string()),
+                    self.repo.workdir_content(path).map_err(|e| e.to_string()),
+                )
+            }
         };
 
         let (old_result, new_result) = match (old_result, new_result) {
@@ -136,11 +184,30 @@ impl App {
                     if self.focus == Focus::Sidebar {
                         self.load_diff_for_selected();
                     }
+                } else if self.sidebar_section == SidebarSection::Unstaged
+                    && !self.staged_files.is_empty()
+                {
+                    // Cross from top of unstaged to bottom of staged
+                    self.sidebar_section = SidebarSection::Staged;
+                    self.selected_index = self.staged_files.len() - 1;
+                    if self.focus == Focus::Sidebar {
+                        self.load_diff_for_selected();
+                    }
                 }
             }
             Message::MoveDown => {
-                if !self.files.is_empty() && self.selected_index < self.files.len() - 1 {
+                let section_len = self.current_section_files().len();
+                if section_len > 0 && self.selected_index < section_len - 1 {
                     self.selected_index += 1;
+                    if self.focus == Focus::Sidebar {
+                        self.load_diff_for_selected();
+                    }
+                } else if self.sidebar_section == SidebarSection::Staged
+                    && !self.unstaged_files.is_empty()
+                {
+                    // Cross from bottom of staged to top of unstaged
+                    self.sidebar_section = SidebarSection::Unstaged;
+                    self.selected_index = 0;
                     if self.focus == Focus::Sidebar {
                         self.load_diff_for_selected();
                     }
@@ -180,8 +247,17 @@ impl App {
                     self.diff_scroll = prev;
                 }
             }
-            Message::MouseClickSidebar(idx) => {
-                if idx < self.files.len() {
+            Message::MouseClickStagedSidebar(idx) => {
+                if idx < self.staged_files.len() {
+                    self.sidebar_section = SidebarSection::Staged;
+                    self.selected_index = idx;
+                    self.focus = Focus::Sidebar;
+                    self.load_diff_for_selected();
+                }
+            }
+            Message::MouseClickUnstagedSidebar(idx) => {
+                if idx < self.unstaged_files.len() {
+                    self.sidebar_section = SidebarSection::Unstaged;
                     self.selected_index = idx;
                     self.focus = Focus::Sidebar;
                     self.load_diff_for_selected();
@@ -191,20 +267,21 @@ impl App {
                 self.focus = Focus::DiffView;
             }
             Message::StageFile => {
-                if let Some(entry) = self.files.get(self.selected_index) {
+                if let Some(entry) = self.selected_entry().cloned() {
                     let _ = self.repo.stage_file(&entry.path);
                     self.refresh_files();
                 }
             }
             Message::UnstageFile => {
-                if let Some(entry) = self.files.get(self.selected_index) {
+                if let Some(entry) = self.selected_entry().cloned() {
                     let _ = self.repo.unstage_file(&entry.path);
                     self.refresh_files();
                 }
             }
             Message::StageHunk => {
+                let entry = self.selected_entry().cloned();
                 if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
-                    self.files.get(self.selected_index),
+                    entry,
                     self.diff_content.as_ref(),
                     self.current_hunk_index,
                 ) {
@@ -223,8 +300,9 @@ impl App {
                 }
             }
             Message::UnstageHunk => {
+                let entry = self.selected_entry().cloned();
                 if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
-                    self.files.get(self.selected_index),
+                    entry,
                     self.diff_content.as_ref(),
                     self.current_hunk_index,
                 ) {
@@ -243,11 +321,35 @@ impl App {
     }
 
     fn refresh_files(&mut self) {
-        if let Ok(files) = self.repo.changed_files() {
-            let selected_path = self.files.get(self.selected_index).map(|e| e.path.clone());
-            self.files = files;
+        if let Ok(all_files) = self.repo.changed_files() {
+            let selected_path = self.selected_entry().map(|e| e.path.clone());
+            let old_section = self.sidebar_section;
+            let (staged, unstaged) = Self::partition_files(&all_files);
+            self.staged_files = staged;
+            self.unstaged_files = unstaged;
+
+            // Try to preserve selection in the same section
             if let Some(ref path) = selected_path {
-                self.selected_index = self.files.iter().position(|f| f.path == *path).unwrap_or(0);
+                let section_files = match old_section {
+                    SidebarSection::Staged => &self.staged_files,
+                    SidebarSection::Unstaged => &self.unstaged_files,
+                };
+                if let Some(pos) = section_files.iter().position(|f| f.path == *path) {
+                    self.selected_index = pos;
+                } else {
+                    // File moved to other section or disappeared
+                    let section_len = section_files.len();
+                    if section_len == 0 {
+                        // Section is now empty, switch to the other
+                        self.sidebar_section = match old_section {
+                            SidebarSection::Staged => SidebarSection::Unstaged,
+                            SidebarSection::Unstaged => SidebarSection::Staged,
+                        };
+                        self.selected_index = 0;
+                    } else {
+                        self.selected_index = self.selected_index.min(section_len - 1);
+                    }
+                }
             }
             self.load_diff_for_selected();
         }
@@ -300,14 +402,29 @@ mod tests {
         }
     }
 
+    fn both_entry() -> FileEntry {
+        FileEntry {
+            path: "both.rs".to_string(),
+            index_status: Some(FileStatus::Modified),
+            workdir_status: Some(FileStatus::Modified),
+        }
+    }
+
     /// Build an App without opening a repo. Used for testing update() logic.
     fn test_app_with_files(files: Vec<FileEntry>) -> App {
-        // Opening the workspace repo for tests - it exists in CI and dev.
-        let repo = GitRepo::open("/workspace").expect("workspace repo should open");
+        let repo = GitRepo::open(".").expect("repo should open");
+        let (staged_files, unstaged_files) = App::partition_files(&files);
+        let initial_section = if !staged_files.is_empty() {
+            SidebarSection::Staged
+        } else {
+            SidebarSection::Unstaged
+        };
         App {
             repo,
-            files,
+            staged_files,
+            unstaged_files,
             selected_index: 0,
+            sidebar_section: initial_section,
             diff_content: None,
             diff_scroll: 0,
             focus: Focus::Sidebar,
@@ -319,66 +436,95 @@ mod tests {
     }
 
     #[test]
+    fn test_partition_files() {
+        let files = vec![staged_only_entry(), unstaged_entry(), both_entry()];
+        let (staged, unstaged) = App::partition_files(&files);
+        // staged_only_entry has index_status, both_entry has index_status
+        assert_eq!(staged.len(), 2);
+        // unstaged_entry has workdir_status, both_entry has workdir_status
+        assert_eq!(unstaged.len(), 2);
+    }
+
+    #[test]
     fn test_staged_only_diff_branching() {
-        // Confirms the staged-only path (HEAD-vs-index) is selected.
         let entry = staged_only_entry();
         assert!(entry.is_staged_only());
     }
 
     #[test]
     fn test_unstaged_diff_branching() {
-        // Confirms the unstaged path (index-vs-workdir) is selected.
         let entry = unstaged_entry();
         assert!(!entry.is_staged_only());
     }
 
     #[test]
     fn test_binary_produces_binary_diff_content() {
-        // If content method returns Binary, load_diff_for_selected should produce
-        // DiffContent with is_binary=true. We simulate by checking binary_diff_content.
         let dc = binary_diff_content("image.png");
         assert!(dc.is_binary);
         assert!(dc.hunks.is_empty());
     }
 
     #[test]
-    fn test_update_move_down() {
+    fn test_update_move_down_within_section() {
         let mut app = test_app_with_files(vec![
             staged_only_entry(),
-            unstaged_entry(),
-            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
         ]);
-        app.focus = Focus::DiffView; // prevent load_diff_for_selected from running
+        app.focus = Focus::DiffView;
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
         assert_eq!(app.selected_index, 0);
         app.update(Message::MoveDown);
         assert_eq!(app.selected_index, 1);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
     }
 
     #[test]
-    fn test_update_move_down_clamped_at_end() {
+    fn test_update_move_down_crosses_to_unstaged() {
         let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
         app.focus = Focus::DiffView;
-        app.selected_index = 1;
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        assert_eq!(app.staged_files.len(), 1);
+        assert_eq!(app.unstaged_files.len(), 1);
+        // At bottom of staged (index 0, len 1), move down should cross
         app.update(Message::MoveDown);
-        assert_eq!(app.selected_index, 1);
-    }
-
-    #[test]
-    fn test_update_move_up_at_zero() {
-        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
-        app.focus = Focus::DiffView;
-        assert_eq!(app.selected_index, 0);
-        app.update(Message::MoveUp);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
         assert_eq!(app.selected_index, 0);
     }
 
     #[test]
-    fn test_update_move_up_decrements() {
+    fn test_update_move_up_crosses_to_staged() {
         let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
         app.focus = Focus::DiffView;
-        app.selected_index = 1;
+        app.sidebar_section = SidebarSection::Unstaged;
+        app.selected_index = 0;
+        app.update(Message::MoveUp);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        assert_eq!(app.selected_index, 0); // last item in staged (len 1, so index 0)
+    }
+
+    #[test]
+    fn test_update_move_up_at_top_of_staged_stays() {
+        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        assert_eq!(app.selected_index, 0);
         app.update(Message::MoveUp);
         assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+    }
+
+    #[test]
+    fn test_update_move_down_at_bottom_of_unstaged_stays() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
     }
 
     #[test]
@@ -494,24 +640,38 @@ mod tests {
     }
 
     #[test]
-    fn test_mouse_click_sidebar_selects_file() {
+    fn test_mouse_click_staged_sidebar() {
         let mut app = test_app_with_files(vec![
             staged_only_entry(),
-            unstaged_entry(),
-            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
         ]);
         app.focus = Focus::DiffView;
-        app.update(Message::MouseClickSidebar(2));
-        assert_eq!(app.selected_index, 2);
+        app.update(Message::MouseClickStagedSidebar(1));
+        assert_eq!(app.selected_index, 1);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
         assert_eq!(app.focus, Focus::Sidebar);
     }
 
     #[test]
-    fn test_mouse_click_sidebar_out_of_bounds_noop() {
+    fn test_mouse_click_unstaged_sidebar() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.update(Message::MouseClickUnstagedSidebar(0));
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+        assert_eq!(app.focus, Focus::Sidebar);
+    }
+
+    #[test]
+    fn test_mouse_click_staged_out_of_bounds_noop() {
         let mut app = test_app_with_files(vec![staged_only_entry()]);
         app.focus = Focus::DiffView;
         let before = app.selected_index;
-        app.update(Message::MouseClickSidebar(99));
+        app.update(Message::MouseClickStagedSidebar(99));
         assert_eq!(app.selected_index, before);
         assert_eq!(app.focus, Focus::DiffView);
     }

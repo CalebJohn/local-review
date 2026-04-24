@@ -11,6 +11,7 @@ use ratatui::crossterm::event::{
 };
 use ratatui::crossterm::execute;
 use ratatui::layout::{Constraint, Layout, Rect};
+use ui::sidebar_section_areas;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::init();
@@ -63,12 +64,20 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
             Event::Mouse(mev) => {
                 let size = terminal.size()?;
                 let area = Rect::new(0, 0, size.width, size.height);
-                let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+                let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
                     .split(area);
+                let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+                    .split(rows[0]);
                 let sidebar_rect = chunks[0];
                 let diff_rect = chunks[1];
 
-                let msg = translate_mouse(mev, sidebar_rect, diff_rect);
+                let (staged_area, unstaged_area) = sidebar_section_areas(
+                    sidebar_rect,
+                    app.staged_files.len(),
+                    app.unstaged_files.len(),
+                );
+
+                let msg = translate_mouse(mev, staged_area, unstaged_area, diff_rect);
                 if let Some(msg) = msg {
                     app.update(msg);
                 }
@@ -83,12 +92,15 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
     Ok(())
 }
 
-fn translate_mouse(mev: MouseEvent, sidebar: Rect, diff: Rect) -> Option<Message> {
+fn translate_mouse(mev: MouseEvent, staged_area: Rect, unstaged_area: Rect, diff: Rect) -> Option<Message> {
     match mev.kind {
         MouseEventKind::Down(MouseButton::Left) => {
-            if rect_contains(sidebar, mev.column, mev.row) {
-                let idx = mev.row.saturating_sub(sidebar.y.saturating_add(1)) as usize;
-                Some(Message::MouseClickSidebar(idx))
+            if rect_contains(staged_area, mev.column, mev.row) {
+                let idx = mev.row.saturating_sub(staged_area.y.saturating_add(1)) as usize;
+                Some(Message::MouseClickStagedSidebar(idx))
+            } else if rect_contains(unstaged_area, mev.column, mev.row) {
+                let idx = mev.row.saturating_sub(unstaged_area.y.saturating_add(1)) as usize;
+                Some(Message::MouseClickUnstagedSidebar(idx))
             } else if rect_contains(diff, mev.column, mev.row) {
                 Some(Message::FocusDiff)
             } else {
@@ -124,7 +136,8 @@ fn rect_contains(r: Rect, col: u16, row: u16) -> bool {
 mod tests {
     use super::*;
 
-    fn sidebar_rect() -> Rect { Rect::new(0, 0, 30, 20) }
+    fn staged_rect() -> Rect { Rect::new(0, 0, 30, 10) }
+    fn unstaged_rect() -> Rect { Rect::new(0, 10, 30, 10) }
     fn diff_rect() -> Rect { Rect::new(30, 0, 50, 20) }
 
     fn mouse(kind: MouseEventKind, col: u16, row: u16) -> MouseEvent {
@@ -138,69 +151,76 @@ mod tests {
 
     #[test]
     fn test_rect_contains_inside() {
-        assert!(rect_contains(sidebar_rect(), 5, 5));
+        assert!(rect_contains(staged_rect(), 5, 5));
     }
 
     #[test]
     fn test_rect_contains_outside_right() {
-        assert!(!rect_contains(sidebar_rect(), 30, 5));
+        assert!(!rect_contains(staged_rect(), 30, 5));
     }
 
     #[test]
     fn test_rect_contains_at_origin() {
-        assert!(rect_contains(sidebar_rect(), 0, 0));
+        assert!(rect_contains(staged_rect(), 0, 0));
     }
 
     #[test]
-    fn test_translate_mouse_click_sidebar_row_3() {
+    fn test_translate_mouse_click_staged_row_3() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 3);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
-                   Some(Message::MouseClickSidebar(2)));
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+                   Some(Message::MouseClickStagedSidebar(2)));
     }
 
     #[test]
-    fn test_translate_mouse_click_sidebar_on_border_is_idx_zero() {
+    fn test_translate_mouse_click_staged_on_border_is_idx_zero() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 0);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
-                   Some(Message::MouseClickSidebar(0)));
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+                   Some(Message::MouseClickStagedSidebar(0)));
+    }
+
+    #[test]
+    fn test_translate_mouse_click_unstaged() {
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 13);
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+                   Some(Message::MouseClickUnstagedSidebar(2)));
     }
 
     #[test]
     fn test_translate_mouse_click_diff_is_focus_diff() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 35, 5);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::FocusDiff));
     }
 
     #[test]
     fn test_translate_mouse_scroll_down_on_diff_is_scroll() {
         let m = mouse(MouseEventKind::ScrollDown, 35, 5);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::ScrollDiffDown));
     }
 
     #[test]
     fn test_translate_mouse_scroll_up_on_diff_is_scroll() {
         let m = mouse(MouseEventKind::ScrollUp, 35, 5);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::ScrollDiffUp));
     }
 
     #[test]
     fn test_translate_mouse_scroll_on_sidebar_is_noop() {
         let m = mouse(MouseEventKind::ScrollDown, 5, 5);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()), None);
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()), None);
     }
 
     #[test]
     fn test_translate_mouse_drag_is_noop() {
         let m = mouse(MouseEventKind::Drag(MouseButton::Left), 5, 5);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()), None);
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()), None);
     }
 
     #[test]
-    fn test_translate_mouse_click_outside_both_rects_is_noop() {
+    fn test_translate_mouse_click_outside_all_rects_is_noop() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 200, 200);
-        assert_eq!(translate_mouse(m, sidebar_rect(), diff_rect()), None);
+        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()), None);
     }
 }

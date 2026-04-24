@@ -1,7 +1,7 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-use crate::app::{App, Focus};
+use crate::app::{App, Focus, SidebarSection};
 use crate::diff::types::{ChangeKind, DiffContent};
 use crate::git::types::{FileEntry, FileStatus};
 use crate::syntax::{StyledDiffContent, StyledSpan};
@@ -14,6 +14,50 @@ pub fn view(frame: &mut ratatui::Frame, app: &App) {
     render_sidebar(frame, app, cols[0]);
     render_diff_view(frame, app, cols[1]);
     render_footer(frame, app, rows[1]);
+}
+
+/// Returns the Rect areas for staged and unstaged sections within the sidebar.
+/// Exported for mouse hit-testing in main.rs.
+pub fn sidebar_section_areas(sidebar_area: Rect, staged_count: usize, unstaged_count: usize) -> (Rect, Rect) {
+    let total = staged_count + unstaged_count;
+    if total == 0 {
+        // Split evenly when both empty
+        let halves = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(sidebar_area);
+        return (halves[0], halves[1]);
+    }
+
+    // Each section gets at least 3 rows (border + title + 1 content line)
+    // Remaining space is proportional to file count
+    let min_rows: u16 = 3;
+    let available = sidebar_area.height;
+
+    if available < min_rows * 2 {
+        // Not enough space for two sections, split evenly
+        let halves = Layout::vertical([Constraint::Percentage(50), Constraint::Percentage(50)])
+            .split(sidebar_area);
+        return (halves[0], halves[1]);
+    }
+
+    let staged_content = staged_count as u16 + 2; // +2 for borders
+    let unstaged_content = unstaged_count as u16 + 2;
+    let total_wanted = staged_content + unstaged_content;
+
+    let (staged_h, unstaged_h) = if total_wanted <= available {
+        // Both fit - give each what it needs, remaining to unstaged (grows with unreviewed files)
+        (staged_content, available - staged_content)
+    } else {
+        // Proportional split with minimum
+        let staged_ratio = staged_count as f32 / total as f32;
+        let staged_h = ((available as f32 * staged_ratio) as u16).max(min_rows);
+        let unstaged_h = available.saturating_sub(staged_h).max(min_rows);
+        let staged_h = available.saturating_sub(unstaged_h); // adjust if unstaged took min
+        (staged_h, unstaged_h)
+    };
+
+    let sections = Layout::vertical([Constraint::Length(staged_h), Constraint::Length(unstaged_h)])
+        .split(sidebar_area);
+    (sections[0], sections[1])
 }
 
 fn status_style(entry: &FileEntry) -> Style {
@@ -40,10 +84,48 @@ fn border_color(focused: bool) -> Color {
 }
 
 fn render_sidebar(frame: &mut ratatui::Frame, app: &App, area: Rect) {
-    let focused = app.focus == Focus::Sidebar;
+    let sidebar_focused = app.focus == Focus::Sidebar;
+    let (staged_area, unstaged_area) =
+        sidebar_section_areas(area, app.staged_files.len(), app.unstaged_files.len());
 
-    let items: Vec<ListItem> = app
-        .files
+    // Staged section
+    render_file_list(
+        frame,
+        &app.staged_files,
+        "Staged",
+        staged_area,
+        sidebar_focused && app.sidebar_section == SidebarSection::Staged,
+        if app.sidebar_section == SidebarSection::Staged {
+            Some(app.selected_index)
+        } else {
+            None
+        },
+    );
+
+    // Unstaged section
+    render_file_list(
+        frame,
+        &app.unstaged_files,
+        "Unstaged",
+        unstaged_area,
+        sidebar_focused && app.sidebar_section == SidebarSection::Unstaged,
+        if app.sidebar_section == SidebarSection::Unstaged {
+            Some(app.selected_index)
+        } else {
+            None
+        },
+    );
+}
+
+fn render_file_list(
+    frame: &mut ratatui::Frame,
+    files: &[FileEntry],
+    title: &str,
+    area: Rect,
+    focused: bool,
+    selected: Option<usize>,
+) {
+    let items: Vec<ListItem> = files
         .iter()
         .map(|entry| {
             let status = entry.display_status();
@@ -55,9 +137,12 @@ fn render_sidebar(frame: &mut ratatui::Frame, app: &App, area: Rect) {
         })
         .collect();
 
+    let count = files.len();
+    let title_text = format!("{} ({})", title, count);
+
     let block = Block::default()
         .borders(Borders::ALL)
-        .title("Files")
+        .title(title_text)
         .border_style(Style::default().fg(border_color(focused)));
 
     let list = List::new(items).block(block).highlight_style(
@@ -67,8 +152,8 @@ fn render_sidebar(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     );
 
     let mut state = ListState::default();
-    if !app.files.is_empty() {
-        state.select(Some(app.selected_index));
+    if selected.is_some() {
+        state.select(selected);
     }
 
     frame.render_stateful_widget(list, area, &mut state);
