@@ -31,7 +31,7 @@ fn map_index_status(status: git2::Status) -> Option<FileStatus> {
 
 fn map_workdir_status(status: git2::Status) -> Option<FileStatus> {
     if status.contains(git2::Status::WT_NEW) {
-        Some(FileStatus::Added)
+        Some(FileStatus::Untracked)
     } else if status.contains(git2::Status::WT_MODIFIED) {
         Some(FileStatus::Modified)
     } else if status.contains(git2::Status::WT_DELETED) {
@@ -301,7 +301,7 @@ mod tests {
     fn test_map_workdir_status_new() {
         assert_eq!(
             map_workdir_status(git2::Status::WT_NEW),
-            Some(FileStatus::Added)
+            Some(FileStatus::Untracked)
         );
     }
 

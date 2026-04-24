@@ -4,9 +4,6 @@ pub mod mapping;
 pub mod registry;
 pub mod scope;
 
-pub use registry::{HIGHLIGHT_NAMES, HighlightRegistry, registry};
-pub use scope::scope_to_style;
-
 #[derive(Debug, Clone)]
 pub struct StyledSpan {
     pub text: String,
@@ -79,7 +76,7 @@ pub fn build_styled_diff(
     Some(StyledDiffContent { lines_by_old_lineno, lines_by_new_lineno })
 }
 
-use crate::diff::types::{ChangeKind, DiffContent};
+use crate::diff::types::DiffContent;
 
 #[cfg(test)]
 mod tests {

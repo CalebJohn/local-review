@@ -75,10 +75,6 @@ by_lang.insert("javascript", build("javascript",
     pub fn get(&self, lang: &str) -> Option<&HighlightConfiguration> {
         self.by_lang.get(lang)
     }
-
-    pub fn languages(&self) -> Vec<&'static str> {
-        self.by_lang.keys().copied().collect()
-    }
 }
 
 fn build(
