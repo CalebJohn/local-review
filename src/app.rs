@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::diff::types::DiffContent;
 use crate::diff::{binary_diff_content, compute_diff_content};
 use crate::git::GitRepo;
@@ -49,6 +51,7 @@ pub struct App {
     pub styled_diff: Option<StyledDiffContent>,
     pub hunk_line_starts: Vec<u16>,
     pub current_hunk_index: Option<usize>,
+    pub scroll_positions: HashMap<String, u16>,
 }
 
 impl App {
@@ -76,6 +79,7 @@ impl App {
             styled_diff: None,
             hunk_line_starts: Vec::new(),
             current_hunk_index: None,
+            scroll_positions: HashMap::new(),
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -109,7 +113,20 @@ impl App {
     }
 
     fn load_diff_for_selected(&mut self) {
-        self.diff_scroll = 0;
+        // Save current scroll position before switching files
+        if let Some(entry) = self.selected_entry() {
+            self.scroll_positions.insert(entry.path.clone(), self.diff_scroll);
+        }
+
+        // Restore scroll position for the newly selected file
+        let files = self.current_section_files();
+        if self.selected_index < files.len() {
+            let entry = &files[self.selected_index];
+            self.diff_scroll = self.scroll_positions.get(&entry.path).copied().unwrap_or(0);
+        } else {
+            self.diff_scroll = 0;
+        }
+
         self.styled_diff = None;
         self.hunk_line_starts = Vec::new();
 
@@ -225,8 +242,6 @@ impl App {
             Message::SelectFile => {
                 self.load_diff_for_selected();
                 self.focus = Focus::DiffView;
-                // Reset scroll when entering diff view to show top of diff
-                self.diff_scroll = 0;
             }
             Message::ScrollDiffUp => {
                 if self.diff_scroll > 0 {
@@ -454,6 +469,7 @@ mod tests {
             styled_diff: None,
             hunk_line_starts: Vec::new(),
             current_hunk_index: None,
+            scroll_positions: HashMap::new(),
         }
     }
 
