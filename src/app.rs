@@ -216,6 +216,11 @@ impl App {
             Message::SelectFile => {
                 self.load_diff_for_selected();
                 self.focus = Focus::DiffView;
+                // Set initial hunk index when entering diff view
+                if !self.hunk_line_starts.is_empty() {
+                    self.current_hunk_index = Some(0);
+                    self.diff_scroll = 0;
+                }
             }
             Message::ScrollDiffUp => {
                 if self.diff_scroll > 0 {
@@ -238,13 +243,24 @@ impl App {
                 self.should_quit = true;
             }
             Message::NextHunk => {
-                if let Some(&next) = self.hunk_line_starts.iter().find(|&&s| s > self.diff_scroll) {
-                    self.diff_scroll = next;
+                if let Some(pos) = self.hunk_line_starts.iter().position(|&s| s > self.diff_scroll) {
+                    self.diff_scroll = self.hunk_line_starts[pos];
+                    self.current_hunk_index = Some(pos);
+                } else if !self.hunk_line_starts.is_empty() {
+                    // Wrap to last hunk
+                    let pos = self.hunk_line_starts.len() - 1;
+                    self.diff_scroll = self.hunk_line_starts[pos];
+                    self.current_hunk_index = Some(pos);
                 }
             }
             Message::PrevHunk => {
-                if let Some(&prev) = self.hunk_line_starts.iter().rev().find(|&&s| s < self.diff_scroll) {
-                    self.diff_scroll = prev;
+                if let Some(pos) = self.hunk_line_starts.iter().rposition(|&s| s < self.diff_scroll) {
+                    self.diff_scroll = self.hunk_line_starts[pos];
+                    self.current_hunk_index = Some(pos);
+                } else if !self.hunk_line_starts.is_empty() {
+                    // Wrap to first hunk
+                    self.diff_scroll = self.hunk_line_starts[0];
+                    self.current_hunk_index = Some(0);
                 }
             }
             Message::MouseClickStagedSidebar(idx) => {
@@ -286,7 +302,7 @@ impl App {
                     self.current_hunk_index,
                 ) {
                     if let Some(hunk) = dc.hunks.get(hunk_idx) {
-                        let old_content = self.repo.head_content(&entry.path)
+                        let old_content = self.repo.index_content(&entry.path)
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
                         let new_content = self.repo.workdir_content(&entry.path)
