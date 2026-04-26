@@ -258,53 +258,57 @@ impl GitRepo {
 
     pub fn stage_hunk(&self, path: &str, old_content: &str, _new_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
         let new_text = apply_hunk_to_content(old_content, hunk);
-        let workdir = self.repo.workdir().ok_or_else(|| -> Box<dyn std::error::Error> {
-            "bare repository has no working directory".into()
-        })?;
-
-        let full_path = workdir.join(path);
-
-        // Save the real working directory content before overwriting
-        let original_workdir = std::fs::read(&full_path)?;
-
-        // Write the hunk-applied content, stage it, then restore
-        std::fs::write(&full_path, new_text)?;
 
         let mut index = self.repo.index()?;
-        index.add_path(Path::new(path))?;
+        let entry = self.index_entry_for_path(&index, path);
+        index.add_frombuffer(&entry, new_text.as_bytes())?;
         index.write()?;
-
-        // Restore the original working directory content
-        std::fs::write(&full_path, original_workdir)?;
 
         Ok(())
     }
 
     pub fn unstage_hunk(&self, path: &str, old_index_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
-        // Reverse-apply the hunk on the index content to produce the desired new index.
-        // The hunk describes HEAD -> index changes; reversing removes just this hunk
-        // while keeping other staged hunks intact.
         let new_index_content = reverse_apply_hunk_to_content(old_index_content, hunk);
 
-        let workdir = self.repo.workdir().ok_or_else(|| -> Box<dyn std::error::Error> {
-            "bare repository has no working directory".into()
-        })?;
-        let full_path = workdir.join(path);
-
-        // Save the real working directory content before overwriting
-        let original_workdir = std::fs::read(&full_path)?;
-
-        // Write the desired index content, stage it, then restore workdir
-        std::fs::write(&full_path, &new_index_content)?;
-
         let mut index = self.repo.index()?;
-        index.add_path(Path::new(path))?;
+
+        // If the result matches HEAD, remove from index entirely (clean unstage)
+        let head = self.head_content(path)?;
+        if let ContentResult::Text(ref head_text) = head {
+            if *head_text == new_index_content {
+                let head_ref = self.repo.head()?;
+                let commit = head_ref.peel_to_commit()?;
+                self.repo.reset_default(Some(commit.as_object()), std::iter::once(Path::new(path)))?;
+                return Ok(());
+            }
+        }
+
+        let entry = self.index_entry_for_path(&index, path);
+        index.add_frombuffer(&entry, new_index_content.as_bytes())?;
         index.write()?;
 
-        // Restore the original working directory content
-        std::fs::write(&full_path, original_workdir)?;
-
         Ok(())
+    }
+
+    fn index_entry_for_path(&self, index: &git2::Index, path: &str) -> git2::IndexEntry {
+        if let Some(existing) = index.get_path(Path::new(path), 0) {
+            existing
+        } else {
+            git2::IndexEntry {
+                ctime: git2::IndexTime::new(0, 0),
+                mtime: git2::IndexTime::new(0, 0),
+                dev: 0,
+                ino: 0,
+                mode: 0o100644,
+                uid: 0,
+                gid: 0,
+                file_size: 0,
+                id: git2::Oid::from_bytes(&[0; 20]).unwrap(),
+                flags: 0,
+                flags_extended: 0,
+                path: path.as_bytes().to_vec(),
+            }
+        }
     }
 }
 
