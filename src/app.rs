@@ -246,12 +246,14 @@ impl App {
             Message::ScrollDiffUp => {
                 if self.diff_scroll > 0 {
                     self.diff_scroll -= 1;
+                    self.update_hunk_from_scroll();
                 }
             }
             Message::ScrollDiffDown => {
                 let max_scroll = self.total_diff_lines().saturating_sub(1) as u16;
                 if self.diff_scroll < max_scroll {
                     self.diff_scroll = self.diff_scroll.saturating_add(1);
+                    self.update_hunk_from_scroll();
                 }
             }
             Message::SwitchFocus => {
@@ -302,6 +304,7 @@ impl App {
             }
             Message::FocusDiff => {
                 self.focus = Focus::DiffView;
+                self.update_hunk_from_scroll();
             }
             Message::StageFile => {
                 if let Some(entry) = self.selected_entry().cloned() {
@@ -390,6 +393,19 @@ impl App {
             }
             self.load_diff_for_selected();
         }
+    }
+
+    fn update_hunk_from_scroll(&mut self) {
+        if self.hunk_line_starts.is_empty() {
+            self.current_hunk_index = None;
+            return;
+        }
+        // Switch when a hunk is within 3 lines of the top of the viewport
+        let threshold = self.diff_scroll.saturating_add(3);
+        self.current_hunk_index = self
+            .hunk_line_starts
+            .iter()
+            .rposition(|&s| s <= threshold);
     }
 
     /// Total rendered lines across all hunks in the current diff_content.
