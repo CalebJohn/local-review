@@ -61,6 +61,60 @@ fn apply_hunk_to_content(old_content: &str, hunk: &DiffHunk) -> String {
     text
 }
 
+/// Reverse-apply a single hunk to the "new" content (the index side of a staged diff).
+///
+/// Mirror of apply_hunk_to_content but operates on the "new" side:
+/// 1. Copy new lines before the hunk (using new_start)
+/// 2. For each hunk line: keep Equal, restore Delete (from hunk content), skip Insert
+/// 3. Copy new lines after the hunk
+///
+/// Used for unstaging: the hunk describes HEAD -> index changes, so reversing it
+/// removes this hunk's changes from the index while keeping other staged hunks intact.
+fn reverse_apply_hunk_to_content(new_content: &str, hunk: &DiffHunk) -> String {
+    let new_lines: Vec<&str> = new_content.lines().collect();
+    let hunk_start = (hunk.new_start as usize).saturating_sub(1);
+
+    // Number of new-file lines this hunk spans (Equal + Insert lines)
+    let new_count = hunk.lines.iter()
+        .filter(|l| l.kind == ChangeKind::Insert || l.kind == ChangeKind::Equal)
+        .count();
+
+    let mut result: Vec<&str> = Vec::new();
+
+    // Lines before the hunk — unchanged
+    let before_end = hunk_start.min(new_lines.len());
+    result.extend_from_slice(&new_lines[..before_end]);
+
+    // Walk the hunk in reverse
+    for line in &hunk.lines {
+        match line.kind {
+            ChangeKind::Equal => {
+                if let Some(ln) = line.new_lineno {
+                    let idx = (ln as usize).saturating_sub(1);
+                    if idx < new_lines.len() {
+                        result.push(new_lines[idx]);
+                    }
+                }
+            }
+            ChangeKind::Delete => {
+                // This line was in HEAD but not index; restore it
+                result.push(line.content.trim_end_matches('\n'));
+            }
+            ChangeKind::Insert => {} // This was added in index; remove it
+        }
+    }
+
+    // Lines after the hunk — unchanged
+    let after_start = (hunk_start + new_count).min(new_lines.len());
+    result.extend_from_slice(&new_lines[after_start..]);
+
+    let mut text = result.join("\n");
+    if new_content.ends_with('\n') {
+        text.push('\n');
+    }
+    text
+}
+
 /// Check for null byte in the first 8192 bytes of content.
 /// Same heuristic as git for binary detection.
 fn is_binary_content(bytes: &[u8]) -> bool {
@@ -227,17 +281,28 @@ impl GitRepo {
     }
 
     pub fn unstage_hunk(&self, path: &str, old_index_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
-        let new_text = apply_hunk_to_content(old_index_content, hunk);
-
-        let head = self.repo.head()?;
-        let commit = head.peel_to_commit()?;
-        self.repo.reset_default(Some(commit.as_object()), std::iter::once(Path::new(path)))?;
+        // Reverse-apply the hunk on the index content to produce the desired new index.
+        // The hunk describes HEAD -> index changes; reversing removes just this hunk
+        // while keeping other staged hunks intact.
+        let new_index_content = reverse_apply_hunk_to_content(old_index_content, hunk);
 
         let workdir = self.repo.workdir().ok_or_else(|| -> Box<dyn std::error::Error> {
             "bare repository has no working directory".into()
         })?;
         let full_path = workdir.join(path);
-        std::fs::write(&full_path, new_text)?;
+
+        // Save the real working directory content before overwriting
+        let original_workdir = std::fs::read(&full_path)?;
+
+        // Write the desired index content, stage it, then restore workdir
+        std::fs::write(&full_path, &new_index_content)?;
+
+        let mut index = self.repo.index()?;
+        index.add_path(Path::new(path))?;
+        index.write()?;
+
+        // Restore the original working directory content
+        std::fs::write(&full_path, original_workdir)?;
 
         Ok(())
     }
@@ -429,6 +494,138 @@ mod tests {
         assert_eq!(result, expected, "Applying hunk 1 should only change line2, not line15");
     }
 
+    // ---- reverse_apply_hunk_to_content tests ----
+
+    fn reverse_apply_hunk_lines(new_content: &str, hunk: &DiffHunk) -> Vec<String> {
+        let result = reverse_apply_hunk_to_content(new_content, hunk);
+        result.lines().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_reverse_apply_hunk_single_line_replacement() {
+        // Hunk: a -> X (old has "a", new has "X"). Reversing on new should restore "a".
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+            ],
+        };
+        assert_eq!(reverse_apply_hunk_lines("X\nb\nc\n", &hunk), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_reverse_apply_hunk_restore_deleted_line() {
+        // Hunk deleted line "b". Reversing should restore it.
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
+            ],
+        };
+        assert_eq!(reverse_apply_hunk_lines("a\nc\n", &hunk), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_reverse_apply_hunk_remove_inserted_line() {
+        // Hunk inserted line "b". Reversing should remove it.
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
+            ],
+        };
+        assert_eq!(reverse_apply_hunk_lines("a\nb\nc\n", &hunk), vec!["a", "c"]);
+    }
+
+    #[test]
+    fn test_reverse_apply_hunk_mid_file() {
+        // Hunk replaces lines 3-4 with X,Y in new content. Reversing should restore 3,4.
+        let hunk = DiffHunk {
+            old_start: 3, new_start: 3,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "3\n".into() },
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(4), new_lineno: None,    content: "4\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(3), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(4), content: "Y\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
+            ],
+        };
+        let new = "1\n2\nX\nY\n5\n6\n7\n";
+        assert_eq!(
+            reverse_apply_hunk_lines(new, &hunk),
+            vec!["1", "2", "3", "4", "5", "6", "7"]
+        );
+    }
+
+    #[test]
+    fn test_reverse_apply_second_hunk_preserves_first() {
+        // Two hunks computed from old->new. Reverse-applying hunk 2 on new content
+        // should undo only hunk 2, keeping hunk 1 intact.
+        use crate::diff::compute_hunks;
+        let old = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\n";
+        let new = "line1\nLINE2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 2);
+
+        // Reverse-apply hunk 2 on new content: should undo LINE15, keep LINE2
+        let result = reverse_apply_hunk_to_content(new, &hunks[1]);
+        let expected = "line1\nLINE2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\n";
+        assert_eq!(result, expected, "Reversing hunk 2 should only undo line15, keeping LINE2");
+
+        // Reverse-apply hunk 1 on new content: should undo LINE2, keep LINE15
+        let result = reverse_apply_hunk_to_content(new, &hunks[0]);
+        let expected = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
+        assert_eq!(result, expected, "Reversing hunk 1 should only undo LINE2, keeping LINE15");
+    }
+
+    #[test]
+    fn test_reverse_apply_preserves_trailing_newline() {
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+            ],
+        };
+        let result = reverse_apply_hunk_to_content("X\nb\n", &hunk);
+        assert_eq!(result, "a\nb\n");
+    }
+
+    #[test]
+    fn test_reverse_apply_no_trailing_newline_when_original_has_none() {
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+            ],
+        };
+        let result = reverse_apply_hunk_to_content("X\nb", &hunk);
+        assert_eq!(result, "a\nb");
+    }
+
+    #[test]
+    fn test_reverse_apply_is_inverse_of_apply() {
+        // apply_hunk(old, hunk) == new, reverse_apply(new, hunk) == old
+        use crate::diff::compute_hunks;
+        let old = "a\nb\nc\nd\ne\n";
+        let new = "a\nb\nC\nd\ne\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+
+        let applied = apply_hunk_to_content(old, &hunks[0]);
+        assert_eq!(applied, new);
+
+        let reversed = reverse_apply_hunk_to_content(new, &hunks[0]);
+        assert_eq!(reversed, old);
+    }
+
     #[test]
     fn test_stage_hunk_preserves_workdir() {
         // Integration test: stage one hunk and verify workdir is preserved
@@ -478,6 +675,66 @@ mod tests {
             ContentResult::Text(s) => assert_eq!(s, expected_index, "Index should have only hunk 2 staged"),
             other => panic!("Expected Text, got {:?}", other),
         }
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_unstage_hunk_preserves_workdir_and_other_hunks() {
+        // Integration test: stage both hunks, then unstage one.
+        // The other hunk should remain staged and workdir should be preserved.
+        use crate::diff::compute_hunks;
+
+        let tmpdir = std::env::temp_dir().join(format!("unstage_hunk_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        let repo = git2::Repository::init(&tmpdir).expect("init repo");
+        repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+        repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+        let file_path = tmpdir.join("test.txt");
+        let head_content = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\n";
+        std::fs::write(&file_path, head_content).unwrap();
+
+        // Stage and commit
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("test.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+
+        // Write workdir with two changes and stage both
+        let workdir_content = "line1\nLINE2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
+        std::fs::write(&file_path, workdir_content).unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        git_repo.stage_file("test.txt").unwrap();
+
+        // Index now has both LINE2 and LINE15. Compute the staged diff hunks (HEAD vs index).
+        let index_content_before = match git_repo.index_content("test.txt").unwrap() {
+            ContentResult::Text(s) => s,
+            other => panic!("Expected Text, got {:?}", other),
+        };
+        let staged_hunks = compute_hunks(head_content, &index_content_before, 3);
+        assert_eq!(staged_hunks.len(), 2, "Expected 2 staged hunks");
+
+        // Unstage hunk 1 (the LINE2 change)
+        git_repo.unstage_hunk("test.txt", &index_content_before, &staged_hunks[0]).unwrap();
+
+        // Verify: workdir should be preserved
+        let workdir_after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(workdir_after, workdir_content, "Workdir should be preserved after unstage_hunk");
+
+        // Verify: index should have only hunk 2 (LINE15) still staged
+        let index_after = match git_repo.index_content("test.txt").unwrap() {
+            ContentResult::Text(s) => s,
+            other => panic!("Expected Text, got {:?}", other),
+        };
+        let expected_index = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
+        assert_eq!(index_after, expected_index, "Index should have only hunk 2 still staged after unstaging hunk 1");
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&tmpdir);
