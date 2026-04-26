@@ -174,6 +174,15 @@ impl App {
             self.styled_diff = build_styled_diff(dc, old_text, new_text);
             self.hunk_line_starts = compute_hunk_line_starts(self.diff_content.as_ref());
         }
+
+        // Set initial hunk index when diff loads successfully
+        if !self.hunk_line_starts.is_empty() {
+            if self.current_hunk_index.is_none() {
+                self.current_hunk_index = Some(0);
+            }
+        } else {
+            self.current_hunk_index = None;
+        }
     }
 
     pub fn update(&mut self, msg: Message) {
@@ -216,11 +225,8 @@ impl App {
             Message::SelectFile => {
                 self.load_diff_for_selected();
                 self.focus = Focus::DiffView;
-                // Set initial hunk index when entering diff view
-                if !self.hunk_line_starts.is_empty() {
-                    self.current_hunk_index = Some(0);
-                    self.diff_scroll = 0;
-                }
+                // Reset scroll when entering diff view to show top of diff
+                self.diff_scroll = 0;
             }
             Message::ScrollDiffUp => {
                 if self.diff_scroll > 0 {
