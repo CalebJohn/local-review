@@ -651,8 +651,7 @@ mod tests {
 
     #[test]
     fn test_gitrepo_open_in_git_repo() {
-        // The workspace is a git repo, so this should succeed
-        let repo = GitRepo::open("/workspace");
+        let repo = GitRepo::open(env!("CARGO_MANIFEST_DIR"));
         assert!(repo.is_ok());
     }
 
@@ -664,16 +663,14 @@ mod tests {
 
     #[test]
     fn test_gitrepo_changed_files_returns_vec() {
-        let repo = GitRepo::open("/workspace").unwrap();
+        let repo = GitRepo::open(env!("CARGO_MANIFEST_DIR")).unwrap();
         let files = repo.changed_files();
         assert!(files.is_ok());
-        // We just verify it returns a Vec without errors
     }
 
     #[test]
     fn test_gitrepo_head_content_existing_file() {
-        // CLAUDE.md should exist in HEAD
-        let repo = GitRepo::open("/workspace").unwrap();
+        let repo = GitRepo::open(env!("CARGO_MANIFEST_DIR")).unwrap();
         let content = repo.head_content("CLAUDE.md");
         assert!(content.is_ok());
         match content.unwrap() {
@@ -684,7 +681,7 @@ mod tests {
 
     #[test]
     fn test_gitrepo_head_content_nonexistent_file() {
-        let repo = GitRepo::open("/workspace").unwrap();
+        let repo = GitRepo::open(env!("CARGO_MANIFEST_DIR")).unwrap();
         let content = repo.head_content("definitely_does_not_exist_xyz.txt");
         assert!(content.is_ok());
         assert_eq!(content.unwrap(), ContentResult::NotFound);
@@ -692,7 +689,7 @@ mod tests {
 
     #[test]
     fn test_gitrepo_workdir_content_existing_file() {
-        let repo = GitRepo::open("/workspace").unwrap();
+        let repo = GitRepo::open(env!("CARGO_MANIFEST_DIR")).unwrap();
         let content = repo.workdir_content("CLAUDE.md");
         assert!(content.is_ok());
         match content.unwrap() {
@@ -703,7 +700,7 @@ mod tests {
 
     #[test]
     fn test_gitrepo_workdir_content_nonexistent_file() {
-        let repo = GitRepo::open("/workspace").unwrap();
+        let repo = GitRepo::open(env!("CARGO_MANIFEST_DIR")).unwrap();
         let content = repo.workdir_content("definitely_does_not_exist_xyz.txt");
         assert!(content.is_ok());
         assert_eq!(content.unwrap(), ContentResult::NotFound);
