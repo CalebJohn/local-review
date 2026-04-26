@@ -326,6 +326,7 @@ impl App {
                     self.current_hunk_index,
                 ) {
                     if let Some(hunk) = dc.hunks.get(hunk_idx) {
+                        let was_last_hunk = hunk_idx == dc.hunks.len() - 1 && dc.hunks.len() > 1;
                         let old_content = self.repo.index_content(&entry.path)
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
@@ -335,6 +336,11 @@ impl App {
                         if let (Some(old), Some(new)) = (old_content, new_content) {
                             let _ = self.repo.stage_hunk(&entry.path, &old, &new, hunk);
                             self.refresh_files();
+                            if was_last_hunk && !self.hunk_line_starts.is_empty() {
+                                let prev = self.hunk_line_starts.len() - 1;
+                                self.current_hunk_index = Some(prev);
+                                self.diff_scroll = self.hunk_line_starts[prev];
+                            }
                         }
                     }
                 }
