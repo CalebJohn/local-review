@@ -506,18 +506,6 @@ mod tests {
     }
 
     #[test]
-    fn test_staged_only_diff_branching() {
-        let entry = staged_only_entry();
-        assert!(entry.is_staged_only());
-    }
-
-    #[test]
-    fn test_unstaged_diff_branching() {
-        let entry = unstaged_entry();
-        assert!(!entry.is_staged_only());
-    }
-
-    #[test]
     fn test_binary_produces_binary_diff_content() {
         let dc = binary_diff_content("image.png");
         assert!(dc.is_binary);

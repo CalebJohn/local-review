@@ -59,9 +59,4 @@ impl FileEntry {
             " "
         }
     }
-
-    /// Returns true when index_status is Some and workdir_status is None.
-    pub fn is_staged_only(&self) -> bool {
-        self.index_status.is_some() && self.workdir_status.is_none()
-    }
 }

@@ -871,35 +871,6 @@ mod tests {
         assert_eq!(entry.display_status(), "?");
     }
 
-    #[test]
-    fn test_file_entry_is_staged_only_true() {
-        let entry = FileEntry {
-            path: "test.rs".to_string(),
-            index_status: Some(FileStatus::Modified),
-            workdir_status: None,
-        };
-        assert!(entry.is_staged_only());
-    }
-
-    #[test]
-    fn test_file_entry_is_staged_only_false_with_workdir() {
-        let entry = FileEntry {
-            path: "test.rs".to_string(),
-            index_status: Some(FileStatus::Modified),
-            workdir_status: Some(FileStatus::Modified),
-        };
-        assert!(!entry.is_staged_only());
-    }
-
-    #[test]
-    fn test_file_entry_is_staged_only_false_no_index() {
-        let entry = FileEntry {
-            path: "test.rs".to_string(),
-            index_status: None,
-            workdir_status: Some(FileStatus::Added),
-        };
-        assert!(!entry.is_staged_only());
-    }
 
     #[test]
     fn test_file_status_display() {
