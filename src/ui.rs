@@ -159,11 +159,15 @@ fn render_file_list(
     frame.render_stateful_widget(list, area, &mut state);
 }
 
-fn hunk_header_line(old_start: u32, new_start: u32) -> Line<'static> {
-    Line::from(Span::styled(
-        format!("@@ -{} +{} @@", old_start, new_start),
-        Style::default().fg(Color::Cyan),
-    ))
+fn hunk_header_line(old_start: u32, new_start: u32, highlighted: bool) -> Line<'static> {
+    let gutter = Span::raw(if highlighted { "│" } else { " " });
+    Line::from(vec![
+        gutter,
+        Span::styled(
+            format!("@@ -{} +{} @@", old_start, new_start),
+            Style::default().fg(Color::Cyan),
+        ),
+    ])
 }
 
 fn format_lineno(n: Option<u32>) -> String {
@@ -173,10 +177,12 @@ fn format_lineno(n: Option<u32>) -> String {
     }
 }
 
-fn diff_lines(diff: &DiffContent) -> Vec<Line<'static>> {
+fn diff_lines(diff: &DiffContent, current_hunk_index: Option<usize>) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    for hunk in &diff.hunks {
-        lines.push(hunk_header_line(hunk.old_start, hunk.new_start));
+    for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
+        let in_hunk = current_hunk_index == Some(hunk_idx);
+        lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
+        let gutter = if in_hunk { "│" } else { " " };
         for dl in &hunk.lines {
             let content = dl.content.trim_end_matches('\n').to_string();
             let (prefix, content_style) = match dl.kind {
@@ -191,7 +197,7 @@ fn diff_lines(diff: &DiffContent) -> Vec<Line<'static>> {
             );
             let body_span = Span::styled(format!("{}{}", prefix, content), content_style);
 
-            lines.push(Line::from(vec![lineno_span, body_span]));
+            lines.push(Line::from(vec![Span::raw(gutter), lineno_span, body_span]));
         }
     }
     lines
@@ -200,10 +206,13 @@ fn diff_lines(diff: &DiffContent) -> Vec<Line<'static>> {
 fn diff_lines_styled(
     diff: &DiffContent,
     styled: &StyledDiffContent,
+    current_hunk_index: Option<usize>,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
-    for hunk in &diff.hunks {
-        lines.push(hunk_header_line(hunk.old_start, hunk.new_start));
+    for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
+        let in_hunk = current_hunk_index == Some(hunk_idx);
+        lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
+        let gutter = if in_hunk { "│" } else { " " };
         for dl in &hunk.lines {
             let content = dl.content.trim_end_matches('\n').to_string();
             let (prefix, content_style) = match dl.kind {
@@ -225,9 +234,11 @@ fn diff_lines_styled(
                 _ => None,
             };
 
+            let gutter_span = Span::raw(gutter);
             let line = if let Some(spans) = styled_line {
                 let prefix_span = Span::styled(prefix.to_string(), Style::default());
-                let mut parts: Vec<Span<'static>> = Vec::with_capacity(2 + spans.len());
+                let mut parts: Vec<Span<'static>> = Vec::with_capacity(3 + spans.len());
+                parts.push(gutter_span);
                 parts.push(lineno_span);
                 parts.push(prefix_span);
                 for sp in spans {
@@ -236,7 +247,7 @@ fn diff_lines_styled(
                 Line::from(parts)
             } else {
                 let body_span = Span::styled(format!("{}{}", prefix, content), content_style);
-                Line::from(vec![lineno_span, body_span])
+                Line::from(vec![gutter_span, lineno_span, body_span])
             };
 
             lines.push(line);
@@ -308,8 +319,8 @@ fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
         }
         Some(dc) => {
             let lines = match &app.styled_diff {
-                Some(sd) => diff_lines_styled(dc, sd),
-                None    => diff_lines(dc),
+                Some(sd) => diff_lines_styled(dc, sd, app.current_hunk_index),
+                None    => diff_lines(dc, app.current_hunk_index),
             };
             let paragraph = Paragraph::new(lines)
                 .block(block)
