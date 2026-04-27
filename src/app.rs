@@ -12,7 +12,7 @@ pub enum Focus {
     DiffView,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SidebarSection {
     Staged,
     Unstaged,
@@ -54,7 +54,7 @@ pub struct App {
     pub styled_diff: Option<StyledDiffContent>,
     pub hunk_line_starts: Vec<u16>,
     pub current_hunk_index: Option<usize>,
-    pub scroll_positions: HashMap<String, u16>,
+    pub scroll_positions: HashMap<(String, SidebarSection), u16>,
     pub diff_stale: bool,
     pub auto_reload: bool,
     pub status_message: Option<String>,
@@ -124,14 +124,16 @@ impl App {
     fn load_diff_for_selected(&mut self) {
         // Save current scroll position before switching files
         if let Some(entry) = self.selected_entry() {
-            self.scroll_positions.insert(entry.path.clone(), self.diff_scroll);
+            let key = (entry.path.clone(), self.sidebar_section);
+            self.scroll_positions.insert(key, self.diff_scroll);
         }
 
         // Restore scroll position for the newly selected file
         let files = self.current_section_files();
         if self.selected_index < files.len() {
             let entry = &files[self.selected_index];
-            self.diff_scroll = self.scroll_positions.get(&entry.path).copied().unwrap_or(0);
+            let key = (entry.path.clone(), self.sidebar_section);
+            self.diff_scroll = self.scroll_positions.get(&key).copied().unwrap_or(0);
         } else {
             self.diff_scroll = 0;
         }
