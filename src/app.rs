@@ -36,7 +36,8 @@ pub enum Message {
     UnstageFile,
     StageHunk,
     UnstageHunk,
-    FileChanged,
+    WorkdirChanged,
+    IndexChanged,
     ReloadDiff,
 }
 
@@ -406,12 +407,16 @@ impl App {
                     }
                 }
             }
-            Message::FileChanged => {
+            Message::WorkdirChanged => {
+                self.refresh_file_list();
                 if self.auto_reload {
                     self.load_diff_for_selected();
                 } else {
                     self.diff_stale = true;
                 }
+            }
+            Message::IndexChanged => {
+                self.refresh_files();
             }
             Message::ReloadDiff => {
                 self.load_diff_for_selected();
@@ -419,7 +424,7 @@ impl App {
         }
     }
 
-    fn refresh_files(&mut self) {
+    fn refresh_file_list(&mut self) {
         if let Ok(all_files) = self.repo.changed_files() {
             let selected_path = self.selected_entry().map(|e| e.path.clone());
             let old_section = self.sidebar_section;
@@ -450,8 +455,12 @@ impl App {
                     }
                 }
             }
-            self.load_diff_for_selected();
         }
+    }
+
+    fn refresh_files(&mut self) {
+        self.refresh_file_list();
+        self.load_diff_for_selected();
     }
 
     fn update_hunk_from_scroll(&mut self) {

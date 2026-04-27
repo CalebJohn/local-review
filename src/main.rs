@@ -4,12 +4,16 @@ mod git;
 mod syntax;
 mod ui;
 
-use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use app::{App, Focus, Message, SidebarSection};
+use app::{App, Focus, Message};
 use notify::Watcher;
+
+enum WatchEvent {
+    Workdir,
+    Index,
+}
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
     MouseButton, MouseEvent, MouseEventKind,
@@ -32,16 +36,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new()?;
 
-    // File watcher: notify sends events through this channel
+    // File watcher: watches workdir recursively + .git/index for external git ops
     let (watch_tx, watch_rx) = mpsc::channel();
+    let workdir = app.repo.workdir_path()
+        .expect("not a bare repo")
+        .to_path_buf();
+    let git_dir = app.repo.git_dir().to_path_buf();
+    let index_path = git_dir.join("index");
+
+    let watcher_git_dir = git_dir.clone();
+    let watcher_index = index_path.clone();
     let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
         if let Ok(ev) = res {
-            if ev.kind.is_modify() {
-                let _ = watch_tx.send(());
+            if !(ev.kind.is_modify() || ev.kind.is_create() || ev.kind.is_remove()) {
+                return;
+            }
+            for path in &ev.paths {
+                if path.starts_with(&watcher_git_dir) {
+                    if path == &watcher_index {
+                        let _ = watch_tx.send(WatchEvent::Index);
+                    }
+                } else {
+                    let _ = watch_tx.send(WatchEvent::Workdir);
+                }
             }
         }
     })?;
-    let mut watched_path: Option<PathBuf> = None;
+    watcher.watch(&workdir, notify::RecursiveMode::Recursive)?;
 
     loop {
         terminal.draw(|frame| ui::view(frame, &app))?;
@@ -106,23 +127,19 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
             }
         }
 
-        // Drain file watcher events
-        if watch_rx.try_recv().is_ok() {
-            app.update(Message::FileChanged);
+        // Drain file watcher events, coalescing into a single update
+        let mut saw_workdir = false;
+        let mut saw_index = false;
+        while let Ok(ev) = watch_rx.try_recv() {
+            match ev {
+                WatchEvent::Workdir => saw_workdir = true,
+                WatchEvent::Index => saw_index = true,
+            }
         }
-
-        // Update watcher target when selected file changes (unstaged files only)
-        let current_path = app.selected_entry()
-            .filter(|_| app.sidebar_section == SidebarSection::Unstaged)
-            .and_then(|e| app.repo.workdir_path().map(|wd| wd.join(&e.path)));
-        if current_path != watched_path {
-            if let Some(ref old) = watched_path {
-                let _ = watcher.unwatch(old);
-            }
-            if let Some(ref new) = current_path {
-                let _ = watcher.watch(new, notify::RecursiveMode::NonRecursive);
-            }
-            watched_path = current_path;
+        if saw_index {
+            app.update(Message::IndexChanged);
+        } else if saw_workdir {
+            app.update(Message::WorkdirChanged);
         }
 
         if app.should_quit {
