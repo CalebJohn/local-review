@@ -56,6 +56,7 @@ pub struct App {
     pub scroll_positions: HashMap<String, u16>,
     pub diff_stale: bool,
     pub auto_reload: bool,
+    pub status_message: Option<String>,
 }
 
 impl App {
@@ -86,6 +87,7 @@ impl App {
             scroll_positions: HashMap::new(),
             diff_stale: false,
             auto_reload: false,
+            status_message: None,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -212,6 +214,7 @@ impl App {
     pub fn update(&mut self, msg: Message) {
         match msg {
             Message::MoveUp => {
+                self.status_message = None;
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
                     if self.focus == Focus::Sidebar {
@@ -229,6 +232,7 @@ impl App {
                 }
             }
             Message::MoveDown => {
+                self.status_message = None;
                 let section_len = self.current_section_files().len();
                 if section_len > 0 && self.selected_index < section_len - 1 {
                     self.selected_index += 1;
@@ -247,16 +251,19 @@ impl App {
                 }
             }
             Message::SelectFile => {
+                self.status_message = None;
                 self.load_diff_for_selected();
                 self.focus = Focus::DiffView;
             }
             Message::ScrollDiffUp => {
+                self.status_message = None;
                 if self.diff_scroll > 0 {
                     self.diff_scroll -= 1;
                     self.update_hunk_from_scroll();
                 }
             }
             Message::ScrollDiffDown => {
+                self.status_message = None;
                 let max_scroll = self.total_diff_lines().saturating_sub(1) as u16;
                 if self.diff_scroll < max_scroll {
                     self.diff_scroll = self.diff_scroll.saturating_add(1);
@@ -264,6 +271,7 @@ impl App {
                 }
             }
             Message::SwitchFocus => {
+                self.status_message = None;
                 self.focus = match self.focus {
                     Focus::Sidebar => Focus::DiffView,
                     Focus::DiffView => Focus::Sidebar,
@@ -273,6 +281,7 @@ impl App {
                 self.should_quit = true;
             }
             Message::NextHunk => {
+                self.status_message = None;
                 if let Some(pos) = self.hunk_line_starts.iter().position(|&s| s > self.diff_scroll) {
                     self.diff_scroll = self.hunk_line_starts[pos];
                     self.current_hunk_index = Some(pos);
@@ -284,6 +293,7 @@ impl App {
                 }
             }
             Message::PrevHunk => {
+                self.status_message = None;
                 if let Some(pos) = self.hunk_line_starts.iter().rposition(|&s| s < self.diff_scroll) {
                     self.diff_scroll = self.hunk_line_starts[pos];
                     self.current_hunk_index = Some(pos);
@@ -315,13 +325,17 @@ impl App {
             }
             Message::StageFile => {
                 if let Some(entry) = self.selected_entry().cloned() {
-                    let _ = self.repo.stage_file(&entry.path);
+                    if let Err(e) = self.repo.stage_file(&entry.path) {
+                        self.status_message = Some(format!("Stage failed: {}", e));
+                    }
                     self.refresh_files();
                 }
             }
             Message::UnstageFile => {
                 if let Some(entry) = self.selected_entry().cloned() {
-                    let _ = self.repo.unstage_file(&entry.path);
+                    if let Err(e) = self.repo.unstage_file(&entry.path) {
+                        self.status_message = Some(format!("Unstage failed: {}", e));
+                    }
                     self.refresh_files();
                 }
             }
@@ -344,7 +358,9 @@ impl App {
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
                         if let (Some(old), Some(new)) = (old_content, new_content) {
-                            let _ = self.repo.stage_hunk(&entry.path, &old, &new, hunk);
+                            if let Err(e) = self.repo.stage_hunk(&entry.path, &old, &new, hunk) {
+                                self.status_message = Some(format!("Stage hunk failed: {}", e));
+                            }
                             self.refresh_files();
                             if was_last_hunk && !self.hunk_line_starts.is_empty() {
                                 let prev = self.hunk_line_starts.len() - 1;
@@ -370,7 +386,9 @@ impl App {
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
                         if let Some(idx_content) = index_content {
-                            let _ = self.repo.unstage_hunk(&entry.path, &idx_content, hunk);
+                            if let Err(e) = self.repo.unstage_hunk(&entry.path, &idx_content, hunk) {
+                                self.status_message = Some(format!("Unstage hunk failed: {}", e));
+                            }
                             self.refresh_files();
                         }
                     }
@@ -517,6 +535,7 @@ mod tests {
             scroll_positions: HashMap::new(),
             diff_stale: false,
             auto_reload: false,
+            status_message: None,
         }
     }
 

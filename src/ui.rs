@@ -261,6 +261,12 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     let desc_style = Style::default().fg(Color::Gray);
     let sep = Span::styled("  ", desc_style);
 
+    if let Some(ref msg) = app.status_message {
+        let footer = Paragraph::new(Line::from(vec![Span::styled(msg.clone(), Style::default().fg(Color::Red))]));
+        frame.render_widget(footer, area);
+        return;
+    }
+
     let in_staged = app.sidebar_section == SidebarSection::Staged;
 
     let mut spans: Vec<Span> = Vec::new();
