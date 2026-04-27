@@ -4,7 +4,12 @@ mod git;
 mod syntax;
 mod ui;
 
-use app::{App, Focus, Message};
+use std::path::PathBuf;
+use std::sync::mpsc;
+use std::time::Duration;
+
+use app::{App, Focus, Message, SidebarSection};
+use notify::Watcher;
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
     MouseButton, MouseEvent, MouseEventKind,
@@ -26,63 +31,98 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new()?;
+
+    // File watcher: notify sends events through this channel
+    let (watch_tx, watch_rx) = mpsc::channel();
+    let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
+        if let Ok(ev) = res {
+            if ev.kind.is_modify() {
+                let _ = watch_tx.send(());
+            }
+        }
+    })?;
+    let mut watched_path: Option<PathBuf> = None;
+
     loop {
         terminal.draw(|frame| ui::view(frame, &app))?;
 
-        match event::read()? {
-            Event::Key(key) => {
-                if key.kind == KeyEventKind::Press {
-                    let msg = match app.focus {
-                        Focus::Sidebar => match key.code {
-                            KeyCode::Char('q') => Some(Message::Quit),
-                            KeyCode::Char('j') | KeyCode::Down => Some(Message::MoveDown),
-                            KeyCode::Char('k') | KeyCode::Up => Some(Message::MoveUp),
-                            KeyCode::Char('s') => Some(Message::StageFile),
-                            KeyCode::Char('u') => Some(Message::UnstageFile),
-                            KeyCode::Enter => Some(Message::SelectFile),
-                            KeyCode::Tab => Some(Message::SwitchFocus),
-                            _ => None,
-                        },
-                        Focus::DiffView => match key.code {
-                            KeyCode::Char('q') => Some(Message::Quit),
-                            KeyCode::Char('j') | KeyCode::Down => Some(Message::ScrollDiffDown),
-                            KeyCode::Char('k') | KeyCode::Up => Some(Message::ScrollDiffUp),
-                            KeyCode::Char('n') => Some(Message::NextHunk),
-                            KeyCode::Char('N') => Some(Message::PrevHunk),
-                            KeyCode::Char('s') => Some(Message::StageHunk),
-                            KeyCode::Char('u') => Some(Message::UnstageHunk),
-                            KeyCode::Tab => Some(Message::SwitchFocus),
-                            KeyCode::Esc => Some(Message::SwitchFocus),
-                            _ => None,
-                        },
-                    };
+        // Poll crossterm events with 100ms timeout (non-blocking)
+        if event::poll(Duration::from_millis(100))? {
+            match event::read()? {
+                Event::Key(key) => {
+                    if key.kind == KeyEventKind::Press {
+                        let msg = match app.focus {
+                            Focus::Sidebar => match key.code {
+                                KeyCode::Char('q') => Some(Message::Quit),
+                                KeyCode::Char('j') | KeyCode::Down => Some(Message::MoveDown),
+                                KeyCode::Char('k') | KeyCode::Up => Some(Message::MoveUp),
+                                KeyCode::Char('s') => Some(Message::StageFile),
+                                KeyCode::Char('u') => Some(Message::UnstageFile),
+                                KeyCode::Enter => Some(Message::SelectFile),
+                                KeyCode::Tab => Some(Message::SwitchFocus),
+                                _ => None,
+                            },
+                            Focus::DiffView => match key.code {
+                                KeyCode::Char('q') => Some(Message::Quit),
+                                KeyCode::Char('j') | KeyCode::Down => Some(Message::ScrollDiffDown),
+                                KeyCode::Char('k') | KeyCode::Up => Some(Message::ScrollDiffUp),
+                                KeyCode::Char('n') => Some(Message::NextHunk),
+                                KeyCode::Char('N') => Some(Message::PrevHunk),
+                                KeyCode::Char('s') => Some(Message::StageHunk),
+                                KeyCode::Char('u') => Some(Message::UnstageHunk),
+                                KeyCode::Char('r') => Some(Message::ReloadDiff),
+                                KeyCode::Tab => Some(Message::SwitchFocus),
+                                KeyCode::Esc => Some(Message::SwitchFocus),
+                                _ => None,
+                            },
+                        };
+                        if let Some(msg) = msg {
+                            app.update(msg);
+                        }
+                    }
+                }
+                Event::Mouse(mev) => {
+                    let size = terminal.size()?;
+                    let area = Rect::new(0, 0, size.width, size.height);
+                    let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
+                        .split(area);
+                    let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+                        .split(rows[0]);
+                    let sidebar_rect = chunks[0];
+                    let diff_rect = chunks[1];
+
+                    let (staged_area, unstaged_area) = sidebar_section_areas(
+                        sidebar_rect,
+                        app.staged_files.len(),
+                        app.unstaged_files.len(),
+                    );
+
+                    let msg = translate_mouse(mev, staged_area, unstaged_area, diff_rect);
                     if let Some(msg) = msg {
                         app.update(msg);
                     }
                 }
+                _ => {}
             }
-            Event::Mouse(mev) => {
-                let size = terminal.size()?;
-                let area = Rect::new(0, 0, size.width, size.height);
-                let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
-                    .split(area);
-                let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
-                    .split(rows[0]);
-                let sidebar_rect = chunks[0];
-                let diff_rect = chunks[1];
+        }
 
-                let (staged_area, unstaged_area) = sidebar_section_areas(
-                    sidebar_rect,
-                    app.staged_files.len(),
-                    app.unstaged_files.len(),
-                );
+        // Drain file watcher events
+        if watch_rx.try_recv().is_ok() {
+            app.update(Message::FileChanged);
+        }
 
-                let msg = translate_mouse(mev, staged_area, unstaged_area, diff_rect);
-                if let Some(msg) = msg {
-                    app.update(msg);
-                }
+        // Update watcher target when selected file changes (unstaged files only)
+        let current_path = app.selected_entry()
+            .filter(|_| app.sidebar_section == SidebarSection::Unstaged)
+            .and_then(|e| app.repo.workdir_path().map(|wd| wd.join(&e.path)));
+        if current_path != watched_path {
+            if let Some(ref old) = watched_path {
+                let _ = watcher.unwatch(old);
             }
-            _ => {}
+            if let Some(ref new) = current_path {
+                let _ = watcher.watch(new, notify::RecursiveMode::NonRecursive);
+            }
+            watched_path = current_path;
         }
 
         if app.should_quit {

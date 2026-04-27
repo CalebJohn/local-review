@@ -276,6 +276,13 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
         }
+        Focus::DiffView if app.diff_stale => {
+            let warn_style = Style::default().fg(Color::Yellow);
+            spans.extend([Span::styled("file changed", warn_style), sep.clone()]);
+            spans.extend([Span::styled(" r ", key_style), Span::styled(" reload diff ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
+            spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
+        }
         Focus::DiffView => {
             spans.extend([Span::styled(" n ", key_style), Span::styled(" next hunk ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" N ", key_style), Span::styled(" prev hunk ", desc_style), sep.clone()]);
@@ -296,11 +303,20 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
 
 fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     let focused = app.focus == Focus::DiffView;
-    let title: String = app
+    let path = app
         .diff_content
         .as_ref()
         .map(|dc| dc.path.clone())
         .unwrap_or_else(|| "Diff".to_string());
+
+    let title = if app.diff_stale {
+        Line::from(vec![
+            Span::raw(path),
+            Span::styled(" file changed -- press r to reload ", Style::default().fg(Color::Yellow)),
+        ])
+    } else {
+        Line::from(path)
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)

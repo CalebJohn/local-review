@@ -156,6 +156,10 @@ impl GitRepo {
         Ok(Self { repo })
     }
 
+    pub fn workdir_path(&self) -> Option<&Path> {
+        self.repo.workdir()
+    }
+
     pub fn changed_files(&self) -> Result<Vec<FileEntry>, git2::Error> {
         let mut opts = git2::StatusOptions::new();
         opts.include_untracked(true);

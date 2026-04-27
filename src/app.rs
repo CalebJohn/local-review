@@ -36,6 +36,8 @@ pub enum Message {
     UnstageFile,
     StageHunk,
     UnstageHunk,
+    FileChanged,
+    ReloadDiff,
 }
 
 pub struct App {
@@ -52,6 +54,8 @@ pub struct App {
     pub hunk_line_starts: Vec<u16>,
     pub current_hunk_index: Option<usize>,
     pub scroll_positions: HashMap<String, u16>,
+    pub diff_stale: bool,
+    pub auto_reload: bool,
 }
 
 impl App {
@@ -80,6 +84,8 @@ impl App {
             hunk_line_starts: Vec::new(),
             current_hunk_index: None,
             scroll_positions: HashMap::new(),
+            diff_stale: false,
+            auto_reload: false,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -108,7 +114,7 @@ impl App {
         }
     }
 
-    fn selected_entry(&self) -> Option<&FileEntry> {
+    pub fn selected_entry(&self) -> Option<&FileEntry> {
         self.current_section_files().get(self.selected_index)
     }
 
@@ -129,6 +135,7 @@ impl App {
 
         self.styled_diff = None;
         self.hunk_line_starts = Vec::new();
+        self.diff_stale = false;
 
         let files = self.current_section_files();
         if self.selected_index >= files.len() {
@@ -319,7 +326,7 @@ impl App {
                 }
             }
             Message::StageHunk => {
-                if self.sidebar_section != SidebarSection::Unstaged {
+                if self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
                     return;
                 }
                 let entry = self.selected_entry().cloned();
@@ -349,7 +356,7 @@ impl App {
                 }
             }
             Message::UnstageHunk => {
-                if self.sidebar_section != SidebarSection::Staged {
+                if self.sidebar_section != SidebarSection::Staged || self.diff_stale {
                     return;
                 }
                 let entry = self.selected_entry().cloned();
@@ -368,6 +375,16 @@ impl App {
                         }
                     }
                 }
+            }
+            Message::FileChanged => {
+                if self.auto_reload {
+                    self.load_diff_for_selected();
+                } else {
+                    self.diff_stale = true;
+                }
+            }
+            Message::ReloadDiff => {
+                self.load_diff_for_selected();
             }
         }
     }
@@ -498,6 +515,8 @@ mod tests {
             hunk_line_starts: Vec::new(),
             current_hunk_index: None,
             scroll_positions: HashMap::new(),
+            diff_stale: false,
+            auto_reload: false,
         }
     }
 
