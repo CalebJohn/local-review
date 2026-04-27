@@ -23,6 +23,13 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ui::sidebar_section_areas;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let original_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let _ = execute!(std::io::stdout(), DisableMouseCapture);
+        ratatui::restore();
+        original_hook(info);
+    }));
+
     let mut terminal = ratatui::init();
     execute!(std::io::stdout(), EnableMouseCapture)?;
 
