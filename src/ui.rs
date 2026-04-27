@@ -279,6 +279,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
                 spans.extend([Span::styled(" s ", key_style), Span::styled(" stage file ", desc_style), sep.clone()]);
             }
             spans.extend([Span::styled(" Enter ", key_style), Span::styled(" open diff ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
         }
@@ -300,6 +301,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
                 spans.extend([Span::styled(" S ", key_style), Span::styled(" stage file ", desc_style), sep.clone()]);
             }
             spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
         }

@@ -4,6 +4,7 @@ mod git;
 mod syntax;
 mod ui;
 
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
@@ -111,6 +112,24 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 _ => {}
                             }
                         }
+                        // 'e' is handled directly (needs terminal access), not via Message
+                        if key.code == KeyCode::Char('e') {
+                            if let Some(rel_path) = app.selected_file_path() {
+                                let abs_path = app.repo.workdir_path()
+                                    .expect("not a bare repo")
+                                    .join(&rel_path);
+                                let editor_result = run_editor(terminal, &abs_path);
+                                // Drain watcher events that accumulated during editing,
+                                // then do a full refresh to pick up all changes at once.
+                                while watch_rx.try_recv().is_ok() {}
+                                app.refresh_files();
+                                if let Err(e) = editor_result {
+                                    app.status_message = Some(format!("Editor: {}", e));
+                                }
+                            }
+                            continue;
+                        }
+
                         let msg = match app.focus {
                             Focus::Sidebar => match key.code {
                                 KeyCode::Char('q') => Some(Message::Quit),
@@ -195,6 +214,40 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
         }
     }
     Ok(())
+}
+
+fn resolve_editor() -> Result<String, String> {
+    std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .map_err(|_| "$VISUAL and $EDITOR are not set".to_string())
+}
+
+fn run_editor(
+    terminal: &mut ratatui::DefaultTerminal,
+    path: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let editor = resolve_editor()?;
+
+    execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
+    disable_raw_mode()?;
+
+    let result = Command::new("sh")
+        .arg("-c")
+        .arg(format!("{} \"$1\"", editor))
+        .arg("--")
+        .arg(path)
+        .status();
+
+    // Always restore terminal state regardless of editor success/failure
+    enable_raw_mode()?;
+    execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture)?;
+    terminal.clear()?;
+
+    match result {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(format!("{} exited with status: {}", editor, status).into()),
+        Err(e) => Err(format!("failed to launch {}: {}", editor, e).into()),
+    }
 }
 
 fn translate_mouse(mev: MouseEvent, staged_area: Rect, unstaged_area: Rect, diff: Rect) -> Option<Message> {

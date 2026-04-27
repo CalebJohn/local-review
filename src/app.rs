@@ -214,6 +214,10 @@ impl App {
         }
     }
 
+    pub fn selected_file_path(&self) -> Option<String> {
+        self.selected_entry().map(|e| e.path.clone())
+    }
+
     pub fn update(&mut self, msg: Message) {
         match msg {
             Message::MoveUp => {
@@ -452,7 +456,7 @@ impl App {
         }
     }
 
-    fn refresh_files(&mut self) {
+    pub fn refresh_files(&mut self) {
         self.refresh_file_list();
         self.load_diff_for_selected();
     }
