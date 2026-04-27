@@ -350,7 +350,6 @@ impl App {
                     self.current_hunk_index,
                 ) {
                     if let Some(hunk) = dc.hunks.get(hunk_idx) {
-                        let was_last_hunk = hunk_idx == dc.hunks.len() - 1 && dc.hunks.len() > 1;
                         let old_content = self.repo.index_content(&entry.path)
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
@@ -362,10 +361,14 @@ impl App {
                                 self.status_message = Some(format!("Stage hunk failed: {}", e));
                             }
                             self.refresh_files();
-                            if was_last_hunk && !self.hunk_line_starts.is_empty() {
-                                let prev = self.hunk_line_starts.len() - 1;
-                                self.current_hunk_index = Some(prev);
-                                self.diff_scroll = self.hunk_line_starts[prev];
+                            if let Some(idx) = self.current_hunk_index {
+                                if self.hunk_line_starts.is_empty() {
+                                    self.current_hunk_index = None;
+                                } else {
+                                    let clamped = idx.min(self.hunk_line_starts.len() - 1);
+                                    self.current_hunk_index = Some(clamped);
+                                    self.diff_scroll = self.hunk_line_starts[clamped];
+                                }
                             }
                         }
                     }
@@ -390,6 +393,15 @@ impl App {
                                 self.status_message = Some(format!("Unstage hunk failed: {}", e));
                             }
                             self.refresh_files();
+                            if let Some(idx) = self.current_hunk_index {
+                                if self.hunk_line_starts.is_empty() {
+                                    self.current_hunk_index = None;
+                                } else {
+                                    let clamped = idx.min(self.hunk_line_starts.len() - 1);
+                                    self.current_hunk_index = Some(clamped);
+                                    self.diff_scroll = self.hunk_line_starts[clamped];
+                                }
+                            }
                         }
                     }
                 }
