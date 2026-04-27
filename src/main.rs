@@ -4,6 +4,7 @@ mod git;
 mod syntax;
 mod ui;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -16,11 +17,20 @@ enum WatchEvent {
 }
 use ratatui::crossterm::event::{
     self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
-    MouseButton, MouseEvent, MouseEventKind,
+    KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ui::sidebar_section_areas;
+
+static SIGTERM_RECEIVED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn sigterm_handler(_: libc::c_int) {
+    SIGTERM_RECEIVED.store(true, Ordering::Relaxed);
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let original_hook = std::panic::take_hook();
@@ -29,6 +39,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ratatui::restore();
         original_hook(info);
     }));
+
+    unsafe {
+        libc::signal(libc::SIGTERM, sigterm_handler as *const () as libc::sighandler_t);
+    }
 
     let mut terminal = ratatui::init();
     execute!(std::io::stdout(), EnableMouseCapture)?;
@@ -79,6 +93,24 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
             match event::read()? {
                 Event::Key(key)
                     if key.kind == KeyEventKind::Press => {
+                        if key.modifiers.contains(KeyModifiers::CONTROL) {
+                            match key.code {
+                                KeyCode::Char('z') => {
+                                    execute!(std::io::stdout(), DisableMouseCapture, LeaveAlternateScreen, ratatui::crossterm::cursor::Show)?;
+                                    disable_raw_mode()?;
+                                    unsafe { libc::raise(libc::SIGTSTP); }
+                                    enable_raw_mode()?;
+                                    execute!(std::io::stdout(), EnterAlternateScreen, EnableMouseCapture, ratatui::crossterm::cursor::Hide)?;
+                                    terminal.clear()?;
+                                    continue;
+                                }
+                                KeyCode::Char('c') => {
+                                    app.update(Message::Quit);
+                                    continue;
+                                }
+                                _ => {}
+                            }
+                        }
                         let msg = match app.focus {
                             Focus::Sidebar => match key.code {
                                 KeyCode::Char('q') => Some(Message::Quit),
@@ -154,7 +186,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
             app.update(Message::WorkdirChanged);
         }
 
-        if app.should_quit {
+        if app.should_quit || SIGTERM_RECEIVED.load(Ordering::Relaxed) {
             break;
         }
     }

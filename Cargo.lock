@@ -462,6 +462,7 @@ name = "git-diff-tui"
 version = "0.1.0"
 dependencies = [
  "git2",
+ "libc",
  "notify",
  "ratatui",
  "similar",
