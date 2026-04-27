@@ -220,18 +220,14 @@ impl App {
                 self.status_message = None;
                 if self.selected_index > 0 {
                     self.selected_index -= 1;
-                    if self.focus == Focus::Sidebar {
-                        self.load_diff_for_selected();
-                    }
+                    self.load_diff_for_selected();
                 } else if self.sidebar_section == SidebarSection::Unstaged
                     && !self.staged_files.is_empty()
                 {
                     // Cross from top of unstaged to bottom of staged
                     self.sidebar_section = SidebarSection::Staged;
                     self.selected_index = self.staged_files.len() - 1;
-                    if self.focus == Focus::Sidebar {
-                        self.load_diff_for_selected();
-                    }
+                    self.load_diff_for_selected();
                 }
             }
             Message::MoveDown => {
@@ -239,18 +235,14 @@ impl App {
                 let section_len = self.current_section_files().len();
                 if section_len > 0 && self.selected_index < section_len - 1 {
                     self.selected_index += 1;
-                    if self.focus == Focus::Sidebar {
-                        self.load_diff_for_selected();
-                    }
+                    self.load_diff_for_selected();
                 } else if self.sidebar_section == SidebarSection::Staged
                     && !self.unstaged_files.is_empty()
                 {
                     // Cross from bottom of staged to top of unstaged
                     self.sidebar_section = SidebarSection::Unstaged;
                     self.selected_index = 0;
-                    if self.focus == Focus::Sidebar {
-                        self.load_diff_for_selected();
-                    }
+                    self.load_diff_for_selected();
                 }
             }
             Message::SelectFile => {
