@@ -319,6 +319,9 @@ impl App {
                 }
             }
             Message::StageHunk => {
+                if self.sidebar_section != SidebarSection::Unstaged {
+                    return;
+                }
                 let entry = self.selected_entry().cloned();
                 if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
                     entry,
@@ -346,6 +349,9 @@ impl App {
                 }
             }
             Message::UnstageHunk => {
+                if self.sidebar_section != SidebarSection::Staged {
+                    return;
+                }
                 let entry = self.selected_entry().cloned();
                 if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
                     entry,

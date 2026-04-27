@@ -261,25 +261,34 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     let desc_style = Style::default().fg(Color::Gray);
     let sep = Span::styled("  ", desc_style);
 
-    let spans: Vec<Span> = match app.focus {
-        Focus::Sidebar => vec![
-            Span::styled(" j/k ", key_style), Span::styled(" navigate ", desc_style), sep.clone(),
-            Span::styled(" s ", key_style), Span::styled(" stage file ", desc_style), sep.clone(),
-            Span::styled(" u ", key_style), Span::styled(" unstage file ", desc_style), sep.clone(),
-            Span::styled(" Enter ", key_style), Span::styled(" open diff ", desc_style), sep.clone(),
-            Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep,
-            Span::styled(" q ", key_style), Span::styled(" quit ", desc_style),
-        ],
-        Focus::DiffView => vec![
-            Span::styled(" n ", key_style), Span::styled(" next hunk ", desc_style), sep.clone(),
-            Span::styled(" N ", key_style), Span::styled(" prev hunk ", desc_style), sep.clone(),
-            Span::styled(" s ", key_style), Span::styled(" stage hunk ", desc_style), sep.clone(),
-            Span::styled(" u ", key_style), Span::styled(" unstage hunk ", desc_style), sep.clone(),
-            Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone(),
-            Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep,
-            Span::styled(" q ", key_style), Span::styled(" quit ", desc_style),
-        ],
-    };
+    let in_staged = app.sidebar_section == SidebarSection::Staged;
+
+    let mut spans: Vec<Span> = Vec::new();
+    match app.focus {
+        Focus::Sidebar => {
+            spans.extend([Span::styled(" j/k ", key_style), Span::styled(" navigate ", desc_style), sep.clone()]);
+            if in_staged {
+                spans.extend([Span::styled(" u ", key_style), Span::styled(" unstage file ", desc_style), sep.clone()]);
+            } else {
+                spans.extend([Span::styled(" s ", key_style), Span::styled(" stage file ", desc_style), sep.clone()]);
+            }
+            spans.extend([Span::styled(" Enter ", key_style), Span::styled(" open diff ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
+            spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
+        }
+        Focus::DiffView => {
+            spans.extend([Span::styled(" n ", key_style), Span::styled(" next hunk ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" N ", key_style), Span::styled(" prev hunk ", desc_style), sep.clone()]);
+            if in_staged {
+                spans.extend([Span::styled(" u ", key_style), Span::styled(" unstage hunk ", desc_style), sep.clone()]);
+            } else {
+                spans.extend([Span::styled(" s ", key_style), Span::styled(" stage hunk ", desc_style), sep.clone()]);
+            }
+            spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
+            spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
+        }
+    }
 
     let footer = Paragraph::new(Line::from(spans));
     frame.render_widget(footer, area);
