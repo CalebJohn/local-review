@@ -345,7 +345,7 @@ impl App {
                     return;
                 }
                 let entry = self.selected_entry().cloned();
-                if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
+                if let (Some(entry), Some(dc), Some(hunk_idx)) = (
                     entry,
                     self.diff_content.as_ref(),
                     self.current_hunk_index,
@@ -380,7 +380,7 @@ impl App {
                     return;
                 }
                 let entry = self.selected_entry().cloned();
-                if let (Some(entry), Some(ref dc), Some(hunk_idx)) = (
+                if let (Some(entry), Some(dc), Some(hunk_idx)) = (
                     entry,
                     self.diff_content.as_ref(),
                     self.current_hunk_index,

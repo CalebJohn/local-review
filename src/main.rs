@@ -70,8 +70,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
         // Poll crossterm events with 100ms timeout (non-blocking)
         if event::poll(Duration::from_millis(100))? {
             match event::read()? {
-                Event::Key(key) => {
-                    if key.kind == KeyEventKind::Press {
+                Event::Key(key)
+                    if key.kind == KeyEventKind::Press => {
                         let msg = match app.focus {
                             Focus::Sidebar => match key.code {
                                 KeyCode::Char('q') => Some(Message::Quit),
@@ -101,7 +101,6 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                             app.update(msg);
                         }
                     }
-                }
                 Event::Mouse(mev) => {
                     let size = terminal.size()?;
                     let area = Rect::new(0, 0, size.width, size.height);
