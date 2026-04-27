@@ -294,8 +294,10 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             spans.extend([Span::styled(" N ", key_style), Span::styled(" prev hunk ", desc_style), sep.clone()]);
             if in_staged {
                 spans.extend([Span::styled(" u ", key_style), Span::styled(" unstage hunk ", desc_style), sep.clone()]);
+                spans.extend([Span::styled(" U ", key_style), Span::styled(" unstage file ", desc_style), sep.clone()]);
             } else {
                 spans.extend([Span::styled(" s ", key_style), Span::styled(" stage hunk ", desc_style), sep.clone()]);
+                spans.extend([Span::styled(" S ", key_style), Span::styled(" stage file ", desc_style), sep.clone()]);
             }
             spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
