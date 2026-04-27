@@ -248,7 +248,13 @@ impl GitRepo {
 
     pub fn stage_file(&self, path: &str) -> Result<(), git2::Error> {
         let mut index = self.repo.index()?;
-        index.add_path(std::path::Path::new(path))?;
+        let full_path = self.repo.workdir()
+            .map(|wd| wd.join(path));
+        if full_path.is_some_and(|p| p.exists()) {
+            index.add_path(std::path::Path::new(path))?;
+        } else {
+            index.remove_path(std::path::Path::new(path))?;
+        }
         index.write()?;
         Ok(())
     }
