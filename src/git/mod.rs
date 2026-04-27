@@ -260,9 +260,17 @@ impl GitRepo {
     }
 
     pub fn unstage_file(&self, path: &str) -> Result<(), git2::Error> {
-        let head = self.repo.head()?;
-        let commit = head.peel_to_commit()?;
-        self.repo.reset_default(Some(commit.as_object()), std::iter::once(Path::new(path)))?;
+        match self.repo.head() {
+            Ok(head) => {
+                let commit = head.peel_to_commit()?;
+                self.repo.reset_default(Some(commit.as_object()), std::iter::once(Path::new(path)))?;
+            }
+            Err(_) => {
+                let mut index = self.repo.index()?;
+                index.remove_path(Path::new(path))?;
+                index.write()?;
+            }
+        }
         Ok(())
     }
 
