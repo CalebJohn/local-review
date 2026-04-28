@@ -167,6 +167,7 @@ impl GitRepo {
     pub fn changed_files(&self) -> Result<Vec<FileEntry>, git2::Error> {
         let mut opts = git2::StatusOptions::new();
         opts.include_untracked(true);
+        opts.recurse_untracked_dirs(true);
         let statuses = self.repo.statuses(Some(&mut opts))?;
 
         let files: Vec<FileEntry> = statuses
