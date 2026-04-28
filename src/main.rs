@@ -150,6 +150,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('q') => Some(Message::Quit),
                                 KeyCode::Char('j') | KeyCode::Down => Some(Message::ScrollDiffDown),
                                 KeyCode::Char('k') | KeyCode::Up => Some(Message::ScrollDiffUp),
+                                KeyCode::Char('g') => Some(Message::ScrollToTop),
+                                KeyCode::Char('G') => Some(Message::ScrollToBottom),
                                 KeyCode::Char(' ') => Some(Message::MoveDown),
                                 KeyCode::Char('J') => Some(Message::MoveDown),
                                 KeyCode::Char('K') => Some(Message::MoveUp),

@@ -36,6 +36,8 @@ pub enum Message {
     UnstageFile,
     StageHunk,
     UnstageHunk,
+    ScrollToTop,
+    ScrollToBottom,
     WorkdirChanged,
     IndexChanged,
     ReloadDiff,
@@ -268,6 +270,16 @@ impl App {
                     self.diff_scroll = self.diff_scroll.saturating_add(1);
                     self.update_hunk_from_scroll();
                 }
+            }
+            Message::ScrollToTop => {
+                self.status_message = None;
+                self.diff_scroll = 0;
+                self.update_hunk_from_scroll();
+            }
+            Message::ScrollToBottom => {
+                self.status_message = None;
+                self.diff_scroll = self.total_diff_lines().saturating_sub(1) as u16;
+                self.update_hunk_from_scroll();
             }
             Message::SwitchFocus => {
                 self.status_message = None;
