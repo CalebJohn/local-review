@@ -281,6 +281,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
                 spans.extend([Span::styled(" u ", key_style), Span::styled(" unstage file ", desc_style), sep.clone()]);
             } else {
                 spans.extend([Span::styled(" s ", key_style), Span::styled(" stage file ", desc_style), sep.clone()]);
+                spans.extend([Span::styled(" d ", key_style), Span::styled(" discard file ", desc_style), sep.clone()]);
             }
             spans.extend([Span::styled(" Enter ", key_style), Span::styled(" open diff ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
@@ -305,6 +306,8 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             } else {
                 spans.extend([Span::styled(" s ", key_style), Span::styled(" stage hunk ", desc_style), sep.clone()]);
                 spans.extend([Span::styled(" S ", key_style), Span::styled(" stage file ", desc_style), sep.clone()]);
+                spans.extend([Span::styled(" d ", key_style), Span::styled(" discard hunk ", desc_style), sep.clone()]);
+                spans.extend([Span::styled(" D ", key_style), Span::styled(" discard file ", desc_style), sep.clone()]);
             }
             spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);

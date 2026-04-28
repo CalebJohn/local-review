@@ -313,6 +313,43 @@ impl GitRepo {
         Ok(())
     }
 
+    pub fn discard_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let workdir = self
+            .repo
+            .workdir()
+            .ok_or_else(|| -> Box<dyn std::error::Error> {
+                "bare repository has no working directory".into()
+            })?;
+
+        let index = self.repo.index()?;
+        if index.get_path(Path::new(path), 0).is_some() {
+            // File is tracked in index — checkout from index to restore workdir
+            let mut checkout = git2::build::CheckoutBuilder::new();
+            checkout.force();
+            checkout.path(path);
+            self.repo.checkout_index(None, Some(&mut checkout))?;
+        } else {
+            // Untracked file — delete from workdir
+            let full_path = workdir.join(path);
+            std::fs::remove_file(&full_path)?;
+        }
+        Ok(())
+    }
+
+    pub fn discard_hunk(&self, path: &str, workdir_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
+        let workdir = self
+            .repo
+            .workdir()
+            .ok_or_else(|| -> Box<dyn std::error::Error> {
+                "bare repository has no working directory".into()
+            })?;
+
+        let new_content = reverse_apply_hunk_to_content(workdir_content, hunk);
+        let full_path = workdir.join(path);
+        std::fs::write(&full_path, new_content)?;
+        Ok(())
+    }
+
     fn index_entry_for_path(&self, index: &git2::Index, path: &str) -> git2::IndexEntry {
         if let Some(existing) = index.get_path(Path::new(path), 0) {
             existing
@@ -959,5 +996,199 @@ mod tests {
         let content = repo.workdir_content("definitely_does_not_exist_xyz.txt");
         assert!(content.is_ok());
         assert_eq!(content.unwrap(), ContentResult::NotFound);
+    }
+
+    // ---- discard tests ----
+
+    /// Helper: create a temp repo with an initial commit containing a file.
+    /// Returns (tmpdir, GitRepo, file_path).
+    fn setup_discard_repo(name: &str, content: &str) -> (std::path::PathBuf, GitRepo, std::path::PathBuf) {
+        let tmpdir = std::env::temp_dir().join(format!("discard_{}_test_{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        let repo = git2::Repository::init(&tmpdir).expect("init repo");
+        repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+        repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+        let file_path = tmpdir.join("test.txt");
+        std::fs::write(&file_path, content).unwrap();
+
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("test.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        (tmpdir, git_repo, file_path)
+    }
+
+    #[test]
+    fn test_discard_file_modified() {
+        let original = "line1\nline2\nline3\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("modified", original);
+
+        // Modify the file in workdir
+        std::fs::write(&file_path, "line1\nCHANGED\nline3\n").unwrap();
+
+        // Discard should restore to index (== HEAD since nothing staged)
+        git_repo.discard_file("test.txt").unwrap();
+
+        let after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(after, original, "File should be restored to index content");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_discard_file_deleted() {
+        let original = "hello\nworld\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("deleted", original);
+
+        // Delete the file from workdir
+        std::fs::remove_file(&file_path).unwrap();
+        assert!(!file_path.exists());
+
+        // Discard should recreate the file from index
+        git_repo.discard_file("test.txt").unwrap();
+
+        assert!(file_path.exists(), "File should be recreated");
+        let after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(after, original, "Restored content should match original");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_discard_file_untracked() {
+        let tmpdir = std::env::temp_dir().join(format!("discard_untracked_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        let repo = git2::Repository::init(&tmpdir).expect("init repo");
+        repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+        repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+        // Create initial commit with a different file so HEAD exists
+        let other_path = tmpdir.join("other.txt");
+        std::fs::write(&other_path, "x\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("other.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+
+        // Create an untracked file
+        let untracked = tmpdir.join("untracked.txt");
+        std::fs::write(&untracked, "new file content\n").unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        git_repo.discard_file("untracked.txt").unwrap();
+
+        assert!(!untracked.exists(), "Untracked file should be deleted");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_discard_file_preserves_staged_changes() {
+        let original = "line1\nline2\nline3\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("staged_preserved", original);
+
+        // Stage a change
+        let staged_content = "line1\nSTAGED\nline3\n";
+        std::fs::write(&file_path, staged_content).unwrap();
+        git_repo.stage_file("test.txt").unwrap();
+
+        // Make further workdir changes on top
+        std::fs::write(&file_path, "line1\nSTAGED\nWORKDIR\n").unwrap();
+
+        // Discard unstaged changes — should restore workdir to index (staged version)
+        git_repo.discard_file("test.txt").unwrap();
+
+        let after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(after, staged_content, "Workdir should match index (staged), not HEAD");
+
+        // Verify staged content is still in index
+        let idx = git_repo.index_content("test.txt").unwrap();
+        match idx {
+            ContentResult::Text(s) => assert_eq!(s, staged_content),
+            other => panic!("Expected Text, got {:?}", other),
+        }
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_discard_hunk_single_hunk() {
+        let original = "a\nb\nc\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("hunk_single", original);
+
+        let modified = "a\nX\nc\n";
+        std::fs::write(&file_path, modified).unwrap();
+
+        use crate::diff::compute_hunks;
+        let hunks = compute_hunks(original, modified, 3);
+        assert_eq!(hunks.len(), 1);
+
+        git_repo.discard_hunk("test.txt", modified, &hunks[0]).unwrap();
+
+        let after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(after, original, "Workdir should be restored to index content");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_discard_hunk_one_of_two() {
+        let original = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("hunk_partial", original);
+
+        let modified = "line1\nLINE2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
+        std::fs::write(&file_path, modified).unwrap();
+
+        use crate::diff::compute_hunks;
+        let hunks = compute_hunks(original, modified, 3);
+        assert_eq!(hunks.len(), 2);
+
+        // Discard only hunk 1 (the LINE2 change) — LINE15 should remain
+        git_repo.discard_hunk("test.txt", modified, &hunks[0]).unwrap();
+
+        let after = std::fs::read_to_string(&file_path).unwrap();
+        let expected = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
+        assert_eq!(after, expected, "Only hunk 1 should be discarded; hunk 2 should remain");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_discard_hunk_preserves_staged_changes() {
+        let original = "line1\nline2\nline3\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("hunk_staged", original);
+
+        // Stage a change
+        let staged = "line1\nSTAGED\nline3\n";
+        std::fs::write(&file_path, staged).unwrap();
+        git_repo.stage_file("test.txt").unwrap();
+
+        // Make workdir change on top of staged
+        let workdir = "line1\nSTAGED\nWORKDIR\n";
+        std::fs::write(&file_path, workdir).unwrap();
+
+        // The unstaged diff is: staged (index) vs workdir
+        // Hunk changes line3 → WORKDIR
+        use crate::diff::compute_hunks;
+        let hunks = compute_hunks(staged, workdir, 3);
+        assert_eq!(hunks.len(), 1);
+
+        git_repo.discard_hunk("test.txt", workdir, &hunks[0]).unwrap();
+
+        let after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(after, staged, "Workdir should match index (staged content)");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
     }
 }

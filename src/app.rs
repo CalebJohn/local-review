@@ -18,6 +18,12 @@ pub enum SidebarSection {
     Unstaged,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum PendingDiscard {
+    File { path: String },
+    Hunk { path: String, hunk_index: usize },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Message {
     MoveUp,
@@ -39,6 +45,8 @@ pub enum Message {
     ScrollToTop,
     ScrollToBottom,
     ToggleSidebar,
+    DiscardFile,
+    DiscardHunk,
     WorkdirChanged,
     IndexChanged,
     ReloadDiff,
@@ -62,6 +70,7 @@ pub struct App {
     pub auto_reload: bool,
     pub status_message: Option<String>,
     pub sidebar_collapsed: bool,
+    pub pending_discard: Option<PendingDiscard>,
 }
 
 impl App {
@@ -94,6 +103,7 @@ impl App {
             auto_reload: false,
             status_message: None,
             sidebar_collapsed: false,
+            pending_discard: None,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -225,6 +235,13 @@ impl App {
     }
 
     pub fn update(&mut self, msg: Message) {
+        // Clear pending discard on any non-discard action
+        if !matches!(msg, Message::DiscardFile | Message::DiscardHunk)
+            && self.pending_discard.take().is_some()
+        {
+            self.status_message = None;
+        }
+
         match msg {
             Message::MoveUp => {
                 self.status_message = None;
@@ -438,6 +455,74 @@ impl App {
                     }
                 }
             }
+            Message::DiscardFile => {
+                if self.sidebar_section != SidebarSection::Unstaged {
+                    return;
+                }
+                if let Some(entry) = self.selected_entry().cloned() {
+                    let pending = PendingDiscard::File { path: entry.path.clone() };
+                    if self.pending_discard.as_ref() == Some(&pending) {
+                        // Confirmed — execute discard
+                        self.pending_discard = None;
+                        self.status_message = None;
+                        if let Err(e) = self.repo.discard_file(&entry.path) {
+                            self.status_message = Some(format!("Discard failed: {}", e));
+                        }
+                        self.refresh_files();
+                    } else {
+                        // First press — ask for confirmation
+                        self.pending_discard = Some(pending);
+                        self.status_message = Some(
+                            format!("Discard all changes to {}? Press d again to confirm (IRREVERSIBLE)", entry.path),
+                        );
+                    }
+                }
+            }
+            Message::DiscardHunk => {
+                if self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
+                    return;
+                }
+                let entry = self.selected_entry().cloned();
+                if let (Some(entry), Some(hunk_idx)) = (entry, self.current_hunk_index) {
+                    let pending = PendingDiscard::Hunk {
+                        path: entry.path.clone(),
+                        hunk_index: hunk_idx,
+                    };
+                    if self.pending_discard.as_ref() == Some(&pending) {
+                        // Confirmed — execute discard
+                        self.pending_discard = None;
+                        self.status_message = None;
+                        if let Some(dc) = self.diff_content.as_ref() {
+                            if let Some(hunk) = dc.hunks.get(hunk_idx) {
+                                let workdir_content = self.repo.workdir_content(&entry.path)
+                                    .ok()
+                                    .and_then(|c| match c { ContentResult::Text(s) => Some(s), _ => None });
+                                if let Some(wc) = workdir_content {
+                                    if let Err(e) = self.repo.discard_hunk(&entry.path, &wc, hunk) {
+                                        self.status_message = Some(format!("Discard hunk failed: {}", e));
+                                    }
+                                    self.refresh_files();
+                                    if let Some(idx) = self.current_hunk_index {
+                                        if self.hunk_line_starts.is_empty() {
+                                            self.current_hunk_index = None;
+                                        } else {
+                                            let clamped = idx.min(self.hunk_line_starts.len() - 1);
+                                            self.current_hunk_index = Some(clamped);
+                                            self.diff_scroll = self.hunk_line_starts[clamped];
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // First press — ask for confirmation
+                        self.pending_discard = Some(pending);
+                        self.status_message = Some(
+                            "Discard this hunk? Press d again to confirm (IRREVERSIBLE)".to_string(),
+                        );
+                    }
+                }
+            }
             Message::WorkdirChanged => {
                 self.refresh_file_list();
                 if self.auto_reload {
@@ -589,6 +674,7 @@ mod tests {
             auto_reload: false,
             status_message: None,
             sidebar_collapsed: false,
+            pending_discard: None,
         }
     }
 
@@ -933,5 +1019,96 @@ mod tests {
         // Click back to staged
         app.update(Message::MouseClickStagedSidebar(0));
         assert_eq!(app.diff_scroll, 33);
+    }
+
+    // ---- discard confirmation flow tests ----
+
+    #[test]
+    fn test_discard_file_noop_in_staged_section() {
+        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        app.update(Message::DiscardFile);
+        assert!(app.pending_discard.is_none());
+        assert!(app.status_message.is_none());
+    }
+
+    #[test]
+    fn test_discard_file_first_press_sets_pending() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+        app.update(Message::DiscardFile);
+        assert_eq!(
+            app.pending_discard,
+            Some(PendingDiscard::File { path: "unstaged.rs".to_string() }),
+        );
+        assert!(app.status_message.is_some());
+        assert!(app.status_message.as_ref().unwrap().contains("IRREVERSIBLE"));
+    }
+
+    #[test]
+    fn test_discard_other_key_clears_pending() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.update(Message::DiscardFile);
+        assert!(app.pending_discard.is_some());
+        assert!(app.status_message.is_some());
+        // Any non-discard message should clear pending
+        app.update(Message::ScrollDiffDown);
+        assert!(app.pending_discard.is_none());
+        assert!(app.status_message.is_none());
+    }
+
+    #[test]
+    fn test_discard_hunk_noop_in_staged_section() {
+        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = Some(0);
+        app.update(Message::DiscardHunk);
+        assert!(app.pending_discard.is_none());
+    }
+
+    #[test]
+    fn test_discard_hunk_first_press_sets_pending() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = Some(0);
+        app.update(Message::DiscardHunk);
+        assert_eq!(
+            app.pending_discard,
+            Some(PendingDiscard::Hunk { path: "unstaged.rs".to_string(), hunk_index: 0 }),
+        );
+        assert!(app.status_message.as_ref().unwrap().contains("IRREVERSIBLE"));
+    }
+
+    #[test]
+    fn test_discard_hunk_noop_when_no_hunk_selected() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = None;
+        app.update(Message::DiscardHunk);
+        assert!(app.pending_discard.is_none());
+    }
+
+    #[test]
+    fn test_discard_file_then_hunk_resets_pending() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.current_hunk_index = Some(0);
+
+        // First: file discard pending
+        app.update(Message::DiscardFile);
+        assert!(matches!(app.pending_discard, Some(PendingDiscard::File { .. })));
+
+        // Then: hunk discard — should replace pending (not confirm file discard)
+        app.update(Message::DiscardHunk);
+        assert!(matches!(app.pending_discard, Some(PendingDiscard::Hunk { .. })));
+    }
+
+    #[test]
+    fn test_discard_hunk_noop_when_diff_stale() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = Some(0);
+        app.diff_stale = true;
+        app.update(Message::DiscardHunk);
+        assert!(app.pending_discard.is_none());
     }
 }
