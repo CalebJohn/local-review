@@ -142,6 +142,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('u') => Some(Message::UnstageFile),
                                 KeyCode::Char('S') => Some(Message::StageFile),
                                 KeyCode::Char('U') => Some(Message::UnstageFile),
+                                KeyCode::Char('b') => Some(Message::ToggleSidebar),
                                 KeyCode::Enter => Some(Message::SelectFile),
                                 KeyCode::Tab => Some(Message::SwitchFocus),
                                 _ => None,
@@ -161,6 +162,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('u') => Some(Message::UnstageHunk),
                                 KeyCode::Char('S') => Some(Message::StageFile),
                                 KeyCode::Char('U') => Some(Message::UnstageFile),
+                                KeyCode::Char('b') => Some(Message::ToggleSidebar),
                                 KeyCode::Char('r') => Some(Message::ReloadDiff),
                                 KeyCode::Tab => Some(Message::SwitchFocus),
                                 KeyCode::Esc => Some(Message::SwitchFocus),
@@ -176,20 +178,29 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                     let area = Rect::new(0, 0, size.width, size.height);
                     let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
                         .split(area);
-                    let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
-                        .split(rows[0]);
-                    let sidebar_rect = chunks[0];
-                    let diff_rect = chunks[1];
 
-                    let (staged_area, unstaged_area) = sidebar_section_areas(
-                        sidebar_rect,
-                        app.staged_files.len(),
-                        app.unstaged_files.len(),
-                    );
+                    if app.sidebar_collapsed {
+                        let diff_rect = rows[0];
+                        let msg = translate_mouse(mev, Rect::ZERO, Rect::ZERO, diff_rect);
+                        if let Some(msg) = msg {
+                            app.update(msg);
+                        }
+                    } else {
+                        let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+                            .split(rows[0]);
+                        let sidebar_rect = chunks[0];
+                        let diff_rect = chunks[1];
 
-                    let msg = translate_mouse(mev, staged_area, unstaged_area, diff_rect);
-                    if let Some(msg) = msg {
-                        app.update(msg);
+                        let (staged_area, unstaged_area) = sidebar_section_areas(
+                            sidebar_rect,
+                            app.staged_files.len(),
+                            app.unstaged_files.len(),
+                        );
+
+                        let msg = translate_mouse(mev, staged_area, unstaged_area, diff_rect);
+                        if let Some(msg) = msg {
+                            app.update(msg);
+                        }
                     }
                 }
                 _ => {}

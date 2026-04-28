@@ -9,10 +9,14 @@ use crate::syntax::{StyledDiffContent, StyledSpan};
 pub fn view(frame: &mut ratatui::Frame, app: &App) {
     let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
         .split(frame.area());
-    let cols = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
-        .split(rows[0]);
-    render_sidebar(frame, app, cols[0]);
-    render_diff_view(frame, app, cols[1]);
+    if app.sidebar_collapsed {
+        render_diff_view(frame, app, rows[0]);
+    } else {
+        let cols = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
+            .split(rows[0]);
+        render_sidebar(frame, app, cols[0]);
+        render_diff_view(frame, app, cols[1]);
+    }
     render_footer(frame, app, rows[1]);
 }
 
@@ -280,6 +284,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             }
             spans.extend([Span::styled(" Enter ", key_style), Span::styled(" open diff ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" b ", key_style), Span::styled(" hide sidebar ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
         }
@@ -287,6 +292,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             let warn_style = Style::default().fg(Color::Yellow);
             spans.extend([Span::styled("file changed", warn_style), sep.clone()]);
             spans.extend([Span::styled(" r ", key_style), Span::styled(" reload diff ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" b ", key_style), Span::styled(if app.sidebar_collapsed { " show sidebar " } else { " hide sidebar " }, desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
         }
@@ -302,6 +308,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             }
             spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" b ", key_style), Span::styled(if app.sidebar_collapsed { " show sidebar " } else { " hide sidebar " }, desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
         }

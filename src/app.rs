@@ -38,6 +38,7 @@ pub enum Message {
     UnstageHunk,
     ScrollToTop,
     ScrollToBottom,
+    ToggleSidebar,
     WorkdirChanged,
     IndexChanged,
     ReloadDiff,
@@ -60,6 +61,7 @@ pub struct App {
     pub diff_stale: bool,
     pub auto_reload: bool,
     pub status_message: Option<String>,
+    pub sidebar_collapsed: bool,
 }
 
 impl App {
@@ -91,6 +93,7 @@ impl App {
             diff_stale: false,
             auto_reload: false,
             status_message: None,
+            sidebar_collapsed: false,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -283,10 +286,21 @@ impl App {
             }
             Message::SwitchFocus => {
                 self.status_message = None;
+                if self.sidebar_collapsed {
+                    // Can't switch to sidebar when it's hidden
+                    return;
+                }
                 self.focus = match self.focus {
                     Focus::Sidebar => Focus::DiffView,
                     Focus::DiffView => Focus::Sidebar,
                 };
+            }
+            Message::ToggleSidebar => {
+                self.status_message = None;
+                self.sidebar_collapsed = !self.sidebar_collapsed;
+                if self.sidebar_collapsed && self.focus == Focus::Sidebar {
+                    self.focus = Focus::DiffView;
+                }
             }
             Message::Quit => {
                 self.should_quit = true;
@@ -567,6 +581,7 @@ mod tests {
             diff_stale: false,
             auto_reload: false,
             status_message: None,
+            sidebar_collapsed: false,
         }
     }
 
