@@ -29,6 +29,7 @@ pub enum Message {
     MoveUp,
     MoveDown,
     SelectFile,
+    SelectSidebar,
     ScrollDiffUp,
     ScrollDiffDown,
     SwitchFocus,
@@ -281,6 +282,11 @@ impl App {
                 self.load_diff_for_selected();
                 self.focus = Focus::DiffView;
             }
+            Message::SelectSidebar => {
+                self.status_message = None;
+                self.sidebar_collapsed = false;
+                self.focus = Focus::Sidebar;
+            }
             Message::ScrollDiffUp => {
                 self.status_message = None;
                 if self.diff_scroll > 0 {
@@ -308,10 +314,7 @@ impl App {
             }
             Message::SwitchFocus => {
                 self.status_message = None;
-                if self.sidebar_collapsed {
-                    // Can't switch to sidebar when it's hidden
-                    return;
-                }
+                self.sidebar_collapsed = false;
                 self.focus = match self.focus {
                     Focus::Sidebar => Focus::DiffView,
                     Focus::DiffView => Focus::Sidebar,
