@@ -126,13 +126,14 @@ impl App {
         self.current_section_files().get(self.selected_index)
     }
 
-    fn load_diff_for_selected(&mut self) {
-        // Save current scroll position before switching files
+    fn save_scroll_position(&mut self) {
         if let Some(entry) = self.selected_entry() {
             let key = (entry.path.clone(), self.sidebar_section);
             self.scroll_positions.insert(key, self.diff_scroll);
         }
+    }
 
+    fn load_diff_for_selected(&mut self) {
         // Restore scroll position for the newly selected file
         let files = self.current_section_files();
         if self.selected_index < files.len() {
@@ -228,12 +229,14 @@ impl App {
             Message::MoveUp => {
                 self.status_message = None;
                 if self.selected_index > 0 {
+                    self.save_scroll_position();
                     self.selected_index -= 1;
                     self.load_diff_for_selected();
                 } else if self.sidebar_section == SidebarSection::Unstaged
                     && !self.staged_files.is_empty()
                 {
                     // Cross from top of unstaged to bottom of staged
+                    self.save_scroll_position();
                     self.sidebar_section = SidebarSection::Staged;
                     self.selected_index = self.staged_files.len() - 1;
                     self.load_diff_for_selected();
@@ -243,12 +246,14 @@ impl App {
                 self.status_message = None;
                 let section_len = self.current_section_files().len();
                 if section_len > 0 && self.selected_index < section_len - 1 {
+                    self.save_scroll_position();
                     self.selected_index += 1;
                     self.load_diff_for_selected();
                 } else if self.sidebar_section == SidebarSection::Staged
                     && !self.unstaged_files.is_empty()
                 {
                     // Cross from bottom of staged to top of unstaged
+                    self.save_scroll_position();
                     self.sidebar_section = SidebarSection::Unstaged;
                     self.selected_index = 0;
                     self.load_diff_for_selected();
@@ -330,6 +335,7 @@ impl App {
             }
             Message::MouseClickStagedSidebar(idx) => {
                 if idx < self.staged_files.len() {
+                    self.save_scroll_position();
                     self.sidebar_section = SidebarSection::Staged;
                     self.selected_index = idx;
                     self.focus = Focus::Sidebar;
@@ -338,6 +344,7 @@ impl App {
             }
             Message::MouseClickUnstagedSidebar(idx) => {
                 if idx < self.unstaged_files.len() {
+                    self.save_scroll_position();
                     self.sidebar_section = SidebarSection::Unstaged;
                     self.selected_index = idx;
                     self.focus = Focus::Sidebar;
@@ -820,5 +827,111 @@ mod tests {
         assert_eq!(app.focus, Focus::Sidebar);
         app.update(Message::FocusDiff);
         assert_eq!(app.focus, Focus::DiffView);
+    }
+
+    #[test]
+    fn test_move_down_resets_scroll_for_new_file() {
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
+        ]);
+        // Simulate scrolling down in the first file
+        app.diff_scroll = 42;
+        // Navigate to the second file
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 1);
+        // Second file was never visited, scroll should be 0
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_move_up_resets_scroll_for_new_file() {
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
+        ]);
+        app.selected_index = 1;
+        app.diff_scroll = 30;
+        app.update(Message::MoveUp);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_scroll_position_saved_and_restored_on_navigation() {
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
+        ]);
+        // Scroll in first file
+        app.diff_scroll = 15;
+        // Move to second file — should save 15 for first file
+        app.update(Message::MoveDown);
+        assert_eq!(app.diff_scroll, 0);
+        // Scroll in second file
+        app.diff_scroll = 25;
+        // Move back to first file — should save 25 for second, restore 15 for first
+        app.update(Message::MoveUp);
+        assert_eq!(app.diff_scroll, 15);
+        // Move to second file again — should restore 25
+        app.update(Message::MoveDown);
+        assert_eq!(app.diff_scroll, 25);
+    }
+
+    #[test]
+    fn test_cross_section_resets_scroll_for_new_file() {
+        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        app.diff_scroll = 20;
+        // Cross from staged to unstaged
+        app.update(Message::MoveDown);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+        assert_eq!(app.diff_scroll, 0);
+        // Scroll in unstaged, then cross back
+        app.diff_scroll = 10;
+        app.update(Message::MoveUp);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        assert_eq!(app.diff_scroll, 20);
+    }
+
+    #[test]
+    fn test_mouse_click_resets_scroll_for_new_file() {
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
+        ]);
+        app.diff_scroll = 50;
+        app.update(Message::MouseClickStagedSidebar(1));
+        assert_eq!(app.selected_index, 1);
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_mouse_click_cross_section_saves_scroll() {
+        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        app.diff_scroll = 33;
+        // Click into unstaged section
+        app.update(Message::MouseClickUnstagedSidebar(0));
+        assert_eq!(app.diff_scroll, 0);
+        // Click back to staged
+        app.update(Message::MouseClickStagedSidebar(0));
+        assert_eq!(app.diff_scroll, 33);
     }
 }
