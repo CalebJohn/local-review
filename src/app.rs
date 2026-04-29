@@ -74,7 +74,6 @@ pub struct App {
     pub sidebar_collapsed: bool,
     pub pending_discard: Option<PendingDiscard>,
     pub show_full_file: bool,
-    pub diff_viewport_height: u16,
 }
 
 impl App {
@@ -109,7 +108,6 @@ impl App {
             sidebar_collapsed: false,
             pending_discard: None,
             show_full_file: false,
-            diff_viewport_height: 0,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -557,11 +555,14 @@ impl App {
         }
     }
 
-    /// Toggle full-file view, preserving the visual anchor at ~20% from the top
-    /// of the viewport so the line the user is looking at stays in view.
+    /// Toggle full-file view, anchoring to the top line of the viewport.
     fn toggle_full_file(&mut self) {
-        let offset = (self.diff_viewport_height as usize) * 20 / 100;
-        let anchor_row = (self.diff_scroll as usize).saturating_add(offset);
+        let anchor_row = self.diff_scroll as usize;
+        let was_header = self
+            .diff_content
+            .as_ref()
+            .map(|dc| is_header_row(dc, anchor_row))
+            .unwrap_or(false);
         let anchor = self
             .diff_content
             .as_ref()
@@ -577,8 +578,11 @@ impl App {
             _ => None,
         };
         if let Some(row) = new_row {
-            let target = (row as u16).saturating_sub(offset as u16);
-            self.diff_scroll = target.min(max_scroll);
+            // row_for_diff_line matches on file line numbers (ignoring ChangeKind::Header),
+            // so when the anchor was a header line, it returns the first content line below it.
+            // Subtract 1 to place the header itself at the top of the viewport.
+            let row = if was_header && row > 0 { row - 1 } else { row };
+            self.diff_scroll = (row as u16).min(max_scroll);
         } else {
             self.diff_scroll = prior_scroll.min(max_scroll);
         }
@@ -710,6 +714,24 @@ pub fn diff_line_at_row(dc: &DiffContent, target_row: usize) -> Option<DiffLineK
     last
 }
 
+/// Check if `target_row` corresponds to a hunk header row in `dc`.
+fn is_header_row(dc: &DiffContent, target_row: usize) -> bool {
+    if dc.is_binary || dc.hunks.is_empty() {
+        return false;
+    }
+    let mut row: usize = 0;
+    for hunk in &dc.hunks {
+        if hunk.has_header {
+            if target_row == row {
+                return true;
+            }
+            row += 1;
+        }
+        row += hunk.lines.len();
+    }
+    false
+}
+
 /// Find the rendered row for a given DiffLine identity in `dc`. Returns None if
 /// the line cannot be located (e.g. an Equal context line that no longer falls
 /// within any hunk after switching modes).
@@ -818,7 +840,6 @@ mod tests {
             sidebar_collapsed: false,
             pending_discard: None,
             show_full_file: false,
-            diff_viewport_height: 0,
         }
     }
 
@@ -1389,7 +1410,7 @@ mod tests {
     }
 
     /// The anchor calculation maps a hunk-mode row to a full-file-mode row
-    /// such that the file line at the original 20% offset stays at 20%.
+    /// such that the top visible line stays at the top after toggling.
     /// This tests the anchor-preservation logic directly using the helpers.
     #[test]
     fn test_anchor_preservation_across_modes() {
@@ -1405,24 +1426,56 @@ mod tests {
         let hunk_row = row_for_diff_line(&hunk_dc, target).expect("insert in hunk mode");
         let full_row = row_for_diff_line(&full_dc, target).expect("insert in full mode");
 
-        // Simulate: viewport=20, anchor at 20% = offset 4. Place target at anchor.
-        let viewport: u16 = 20;
-        let offset: u16 = (viewport as usize * 20 / 100) as u16; // = 4
-        let hunk_scroll = (hunk_row as u16).saturating_sub(offset);
+        // Simulate: anchor at top of viewport (scroll = target row).
+        let hunk_scroll = hunk_row as u16;
 
         // Anchor logic: walk current view to find what line is at anchor row.
-        let anchor_row = (hunk_scroll + offset) as usize;
+        let anchor_row = hunk_scroll as usize;
         let anchor = diff_line_at_row(&hunk_dc, anchor_row).expect("anchor present");
         assert_eq!(anchor, target);
 
-        // Compute new scroll for full-file mode
+        // Compute new scroll for full-file mode: anchor line goes to top.
         let new_row = row_for_diff_line(&full_dc, anchor).expect("found in full");
         assert_eq!(new_row, full_row);
-        let full_scroll = (new_row as u16).saturating_sub(offset);
+        let full_scroll = new_row as u16;
 
-        // Verify the same line is again at the 20% anchor position
-        let resolved = diff_line_at_row(&full_dc, (full_scroll + offset) as usize);
+        // Verify the same line is at the top of the viewport.
+        let resolved = diff_line_at_row(&full_dc, full_scroll as usize);
         assert_eq!(resolved, Some(target));
+    }
+
+    /// When the top line is a hunk header, toggling should keep the header
+    /// visible at the top (not push it out of view).
+    #[test]
+    fn test_anchor_preservation_with_header_at_top() {
+        // Multi-hunk file where a hunk starts at row 0 (top of viewport)
+        let old: String = (1..=200).map(|n| format!("line{}\n", n)).collect();
+        // Two separate changes: one at line 10, another at line 100
+        let new = old.replace("line10\n", "LINE10\n").replace("line100\n", "LINE100\n");
+
+        let hunk_dc = crate::diff::compute_diff_content("t.rs", Some(&old), Some(&new));
+        let full_dc = crate::diff::compute_full_diff_content("t.rs", Some(&old), Some(&new));
+
+        // Scroll so the first hunk header is at the top (row 0)
+        let hunk_scroll: u16 = 0;
+
+        // Verify we're on a header row
+        assert!(is_header_row(&hunk_dc, hunk_scroll as usize));
+
+        // Anchor logic from toggle_full_file
+        let was_header = is_header_row(&hunk_dc, hunk_scroll as usize);
+        let anchor = diff_line_at_row(&hunk_dc, hunk_scroll as usize).expect("anchor");
+
+        // Find the corresponding row in full mode
+        let new_row = row_for_diff_line(&full_dc, anchor).expect("found in full");
+        let full_scroll = if was_header && new_row > 0 {
+            new_row - 1
+        } else {
+            new_row
+        } as u16;
+
+        // Verify the header is at the top of the viewport in full mode
+        assert!(is_header_row(&full_dc, full_scroll as usize));
     }
 
     /// `Message::ToggleFullFile` flips the flag and reloads the diff (or clears
