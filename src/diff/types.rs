@@ -18,6 +18,10 @@ pub struct DiffHunk {
     pub old_start: u32,
     pub new_start: u32,
     pub lines: Vec<DiffLine>,
+    /// When false, the hunk is a context-only "filler" surrounding real change
+    /// hunks in full-file view. The renderer omits the `@@` header for fillers
+    /// and navigation/staging skip them.
+    pub has_header: bool,
 }
 
 #[derive(Debug, Clone)]

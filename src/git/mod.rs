@@ -394,6 +394,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\n", &hunk), vec!["a", "X", "c"]);
     }
@@ -408,6 +409,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\n", &hunk), vec!["a", "c"]);
     }
@@ -422,6 +424,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "b\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(apply_hunk_lines("a\nc\n", &hunk), vec!["a", "b", "c"]);
     }
@@ -437,6 +440,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\nd\n", &hunk), vec!["a", "d"]);
     }
@@ -452,6 +456,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\nd\n", &hunk), vec!["b", "d"]);
     }
@@ -469,6 +474,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(4), content: "Y\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
             ],
+            has_header: true,
         };
         let old = "1\n2\n3\n4\n5\n6\n7\n";
         assert_eq!(apply_hunk_lines(old, &hunk), vec!["1", "2", "X", "Y", "5", "6", "7"]);
@@ -491,6 +497,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(6), content: "G\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(8), new_lineno: Some(7), content: "h\n".into() },
             ],
+            has_header: true,
         };
         let old = "a\nb\nc\nd\ne\nf\ng\nh\n";
         assert_eq!(
@@ -507,6 +514,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
+            has_header: true,
         };
         let result = apply_hunk_to_content("a\nb\n", &hunk);
         assert_eq!(result, "X\nb\n");
@@ -520,6 +528,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
+            has_header: true,
         };
         let result = apply_hunk_to_content("a\nb", &hunk);
         assert_eq!(result, "X\nb");
@@ -575,6 +584,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(reverse_apply_hunk_lines("X\nb\nc\n", &hunk), vec!["a", "b", "c"]);
     }
@@ -589,6 +599,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(reverse_apply_hunk_lines("a\nc\n", &hunk), vec!["a", "b", "c"]);
     }
@@ -603,6 +614,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "b\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
             ],
+            has_header: true,
         };
         assert_eq!(reverse_apply_hunk_lines("a\nb\nc\n", &hunk), vec!["a", "c"]);
     }
@@ -619,6 +631,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(4), content: "Y\n".into() },
                 DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
             ],
+            has_header: true,
         };
         let new = "1\n2\nX\nY\n5\n6\n7\n";
         assert_eq!(
@@ -656,6 +669,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
+            has_header: true,
         };
         let result = reverse_apply_hunk_to_content("X\nb\n", &hunk);
         assert_eq!(result, "a\nb\n");
@@ -669,6 +683,7 @@ mod tests {
                 DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
                 DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
+            has_header: true,
         };
         let result = reverse_apply_hunk_to_content("X\nb", &hunk);
         assert_eq!(result, "a\nb");

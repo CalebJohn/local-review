@@ -184,8 +184,10 @@ fn format_lineno(n: Option<u32>) -> String {
 fn diff_lines(diff: &DiffContent, current_hunk_index: Option<usize>) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
-        let in_hunk = current_hunk_index == Some(hunk_idx);
-        lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
+        let in_hunk = hunk.has_header && current_hunk_index == Some(hunk_idx);
+        if hunk.has_header {
+            lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
+        }
         let gutter = if in_hunk { "│" } else { " " };
         for dl in &hunk.lines {
             let content = dl.content.trim_end_matches('\n').to_string();
@@ -214,8 +216,10 @@ fn diff_lines_styled(
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
-        let in_hunk = current_hunk_index == Some(hunk_idx);
-        lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
+        let in_hunk = hunk.has_header && current_hunk_index == Some(hunk_idx);
+        if hunk.has_header {
+            lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
+        }
         let gutter = if in_hunk { "│" } else { " " };
         for dl in &hunk.lines {
             let content = dl.content.trim_end_matches('\n').to_string();
@@ -272,6 +276,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     }
 
     let in_staged = app.sidebar_section == SidebarSection::Staged;
+    let full_file_label = if app.show_full_file { " hunks only " } else { " full file " };
 
     let mut spans: Vec<Span> = Vec::new();
     match app.focus {
@@ -285,6 +290,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             }
             spans.extend([Span::styled(" Enter ", key_style), Span::styled(" open diff ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" f ", key_style), Span::styled(full_file_label, desc_style), sep.clone()]);
             spans.extend([Span::styled(" b ", key_style), Span::styled(" hide sidebar ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
@@ -311,6 +317,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             }
             spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" f ", key_style), Span::styled(full_file_label, desc_style), sep.clone()]);
             spans.extend([Span::styled(" b ", key_style), Span::styled(if app.sidebar_collapsed { " show sidebar " } else { " hide sidebar " }, desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);

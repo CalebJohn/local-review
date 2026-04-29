@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::diff::types::DiffContent;
-use crate::diff::{binary_diff_content, compute_diff_content};
+use crate::diff::types::{ChangeKind, DiffContent};
+use crate::diff::{binary_diff_content, compute_diff_content, compute_full_diff_content};
 use crate::git::GitRepo;
 use crate::git::types::{ContentResult, FileEntry};
 use crate::syntax::{build_styled_diff, StyledDiffContent};
@@ -51,6 +51,7 @@ pub enum Message {
     WorkdirChanged,
     IndexChanged,
     ReloadDiff,
+    ToggleFullFile,
 }
 
 pub struct App {
@@ -66,12 +67,14 @@ pub struct App {
     pub styled_diff: Option<StyledDiffContent>,
     pub hunk_line_starts: Vec<u16>,
     pub current_hunk_index: Option<usize>,
-    pub scroll_positions: HashMap<(String, SidebarSection), u16>,
+    pub scroll_positions: HashMap<(String, SidebarSection, bool), u16>,
     pub diff_stale: bool,
     pub auto_reload: bool,
     pub status_message: Option<String>,
     pub sidebar_collapsed: bool,
     pub pending_discard: Option<PendingDiscard>,
+    pub show_full_file: bool,
+    pub diff_viewport_height: u16,
 }
 
 impl App {
@@ -105,6 +108,8 @@ impl App {
             status_message: None,
             sidebar_collapsed: false,
             pending_discard: None,
+            show_full_file: false,
+            diff_viewport_height: 0,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -139,17 +144,17 @@ impl App {
 
     fn save_scroll_position(&mut self) {
         if let Some(entry) = self.selected_entry() {
-            let key = (entry.path.clone(), self.sidebar_section);
+            let key = (entry.path.clone(), self.sidebar_section, self.show_full_file);
             self.scroll_positions.insert(key, self.diff_scroll);
         }
     }
 
     fn load_diff_for_selected(&mut self) {
-        // Restore scroll position for the newly selected file
+        // Restore scroll position for the newly selected file (per-mode)
         let files = self.current_section_files();
         if self.selected_index < files.len() {
             let entry = &files[self.selected_index];
-            let key = (entry.path.clone(), self.sidebar_section);
+            let key = (entry.path.clone(), self.sidebar_section, self.show_full_file);
             self.diff_scroll = self.scroll_positions.get(&key).copied().unwrap_or(0);
         } else {
             self.diff_scroll = 0;
@@ -213,7 +218,11 @@ impl App {
             _ => None,
         };
 
-        self.diff_content = Some(compute_diff_content(path, old_text, new_text));
+        self.diff_content = Some(if self.show_full_file {
+            compute_full_diff_content(path, old_text, new_text)
+        } else {
+            compute_diff_content(path, old_text, new_text)
+        });
 
         // Populate styled_diff and hunk_line_starts after diff_content is set
         if let Some(dc) = &self.diff_content {
@@ -332,25 +341,26 @@ impl App {
             }
             Message::NextHunk => {
                 self.status_message = None;
-                if let Some(pos) = self.hunk_line_starts.iter().position(|&s| s > self.diff_scroll) {
-                    self.diff_scroll = self.hunk_line_starts[pos];
+                let change_starts = self.change_hunk_starts();
+                if let Some(&(pos, s)) = change_starts.iter().find(|(_, s)| *s > self.diff_scroll) {
+                    self.diff_scroll = s;
                     self.current_hunk_index = Some(pos);
-                } else if !self.hunk_line_starts.is_empty() {
-                    // Wrap to last hunk
-                    let pos = self.hunk_line_starts.len() - 1;
-                    self.diff_scroll = self.hunk_line_starts[pos];
+                } else if let Some(&(pos, s)) = change_starts.last() {
+                    // Wrap to last change hunk
+                    self.diff_scroll = s;
                     self.current_hunk_index = Some(pos);
                 }
             }
             Message::PrevHunk => {
                 self.status_message = None;
-                if let Some(pos) = self.hunk_line_starts.iter().rposition(|&s| s < self.diff_scroll) {
-                    self.diff_scroll = self.hunk_line_starts[pos];
+                let change_starts = self.change_hunk_starts();
+                if let Some(&(pos, s)) = change_starts.iter().rev().find(|(_, s)| *s < self.diff_scroll) {
+                    self.diff_scroll = s;
                     self.current_hunk_index = Some(pos);
-                } else if !self.hunk_line_starts.is_empty() {
-                    // Wrap to first hunk
-                    self.diff_scroll = self.hunk_line_starts[0];
-                    self.current_hunk_index = Some(0);
+                } else if let Some(&(pos, s)) = change_starts.first() {
+                    // Wrap to first change hunk
+                    self.diff_scroll = s;
+                    self.current_hunk_index = Some(pos);
                 }
             }
             Message::MouseClickStagedSidebar(idx) => {
@@ -540,7 +550,39 @@ impl App {
             Message::ReloadDiff => {
                 self.load_diff_for_selected();
             }
+            Message::ToggleFullFile => {
+                self.status_message = None;
+                self.toggle_full_file();
+            }
         }
+    }
+
+    /// Toggle full-file view, preserving the visual anchor at ~20% from the top
+    /// of the viewport so the line the user is looking at stays in view.
+    fn toggle_full_file(&mut self) {
+        let offset = (self.diff_viewport_height as usize) * 20 / 100;
+        let anchor_row = (self.diff_scroll as usize).saturating_add(offset);
+        let anchor = self
+            .diff_content
+            .as_ref()
+            .and_then(|dc| diff_line_at_row(dc, anchor_row));
+        let prior_scroll = self.diff_scroll;
+
+        self.show_full_file = !self.show_full_file;
+        self.load_diff_for_selected();
+
+        let max_scroll = self.total_diff_lines().saturating_sub(1) as u16;
+        let new_row = match (anchor, self.diff_content.as_ref()) {
+            (Some(a), Some(dc)) => row_for_diff_line(dc, a),
+            _ => None,
+        };
+        if let Some(row) = new_row {
+            let target = (row as u16).saturating_sub(offset as u16);
+            self.diff_scroll = target.min(max_scroll);
+        } else {
+            self.diff_scroll = prior_scroll.min(max_scroll);
+        }
+        self.update_hunk_from_scroll();
     }
 
     fn refresh_file_list(&mut self) {
@@ -587,25 +629,121 @@ impl App {
             self.current_hunk_index = None;
             return;
         }
-        // Switch when a hunk is within 3 lines of the top of the viewport
+        // Switch when a hunk is within 3 lines of the top of the viewport.
+        // Only consider change hunks (skip filler hunks without headers).
         let threshold = self.diff_scroll.saturating_add(3);
+        let diff = self.diff_content.as_ref();
         self.current_hunk_index = self
             .hunk_line_starts
             .iter()
-            .rposition(|&s| s <= threshold);
+            .enumerate()
+            .filter(|(i, _)| {
+                diff.and_then(|dc| dc.hunks.get(*i))
+                    .is_none_or(|h| h.has_header)
+            })
+            .filter(|(_, &s)| s <= threshold)
+            .map(|(i, _)| i)
+            .next_back();
+    }
+
+    /// Return (hunk_index, start_row) for change hunks only — filler hunks
+    /// without headers are skipped. Used for `n`/`N` navigation.
+    fn change_hunk_starts(&self) -> Vec<(usize, u16)> {
+        let diff = self.diff_content.as_ref();
+        self.hunk_line_starts
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| {
+                diff.and_then(|dc| dc.hunks.get(*i))
+                    .is_none_or(|h| h.has_header)
+            })
+            .map(|(i, &s)| (i, s))
+            .collect()
     }
 
     /// Total rendered lines across all hunks in the current diff_content.
     /// Used for scroll clamping.
     pub fn total_diff_lines(&self) -> usize {
         match &self.diff_content {
-            Some(dc) if !dc.is_binary => {
-                // One separator line per hunk + all lines
-                dc.hunks.iter().map(|h| h.lines.len() + 1).sum()
-            }
+            Some(dc) if !dc.is_binary => dc
+                .hunks
+                .iter()
+                .map(|h| h.lines.len() + if h.has_header { 1 } else { 0 })
+                .sum(),
             _ => 0,
         }
     }
+}
+
+/// Identifier for a single rendered diff line, robust to changing context/grouping.
+pub type DiffLineKey = (ChangeKind, Option<u32>, Option<u32>);
+
+/// Return the DiffLine identity rendered at `target_row` in the current view.
+///
+/// Hunk header rows resolve to the first line in that hunk so that anchoring on
+/// a header still produces a meaningful target after recomputing the diff. If
+/// `target_row` is past the end, returns the last line. Returns None for empty
+/// or binary diffs.
+pub fn diff_line_at_row(dc: &DiffContent, target_row: usize) -> Option<DiffLineKey> {
+    if dc.is_binary || dc.hunks.is_empty() {
+        return None;
+    }
+    let mut row: usize = 0;
+    let mut last: Option<DiffLineKey> = None;
+    for hunk in &dc.hunks {
+        if hunk.has_header {
+            if target_row == row {
+                if let Some(first) = hunk.lines.first() {
+                    return Some((first.kind, first.old_lineno, first.new_lineno));
+                }
+            }
+            row += 1;
+        }
+        for dl in &hunk.lines {
+            if target_row == row {
+                return Some((dl.kind, dl.old_lineno, dl.new_lineno));
+            }
+            last = Some((dl.kind, dl.old_lineno, dl.new_lineno));
+            row += 1;
+        }
+    }
+    last
+}
+
+/// Find the rendered row for a given DiffLine identity in `dc`. Returns None if
+/// the line cannot be located (e.g. an Equal context line that no longer falls
+/// within any hunk after switching modes).
+pub fn row_for_diff_line(dc: &DiffContent, target: DiffLineKey) -> Option<usize> {
+    if dc.is_binary {
+        return None;
+    }
+    let (t_kind, t_old, t_new) = target;
+    let mut row: usize = 0;
+    for hunk in &dc.hunks {
+        if hunk.has_header {
+            row += 1;
+        }
+        for dl in &hunk.lines {
+            let matches = match t_kind {
+                ChangeKind::Equal => {
+                    dl.kind == ChangeKind::Equal
+                        && dl.old_lineno == t_old
+                        && dl.new_lineno == t_new
+                }
+                ChangeKind::Insert => {
+                    dl.kind == ChangeKind::Insert && dl.new_lineno == t_new
+                }
+                ChangeKind::Delete => {
+                    dl.kind == ChangeKind::Delete && dl.old_lineno == t_old
+                }
+            };
+            if matches {
+                return Some(row);
+            }
+            row += 1;
+        }
+    }
+    None
 }
 
 pub fn compute_hunk_line_starts(dc: Option<&DiffContent>) -> Vec<u16> {
@@ -615,7 +753,8 @@ pub fn compute_hunk_line_starts(dc: Option<&DiffContent>) -> Vec<u16> {
     let mut cum: u16 = 0;
     for h in &dc.hunks {
         starts.push(cum);
-        cum = cum.saturating_add(1u16.saturating_add(h.lines.len() as u16));
+        let header_rows: u16 = if h.has_header { 1 } else { 0 };
+        cum = cum.saturating_add(header_rows.saturating_add(h.lines.len() as u16));
     }
     starts
 }
@@ -678,6 +817,8 @@ mod tests {
             status_message: None,
             sidebar_collapsed: false,
             pending_discard: None,
+            show_full_file: false,
+            diff_viewport_height: 0,
         }
     }
 
@@ -820,9 +961,9 @@ mod tests {
     fn test_compute_hunk_line_starts_three_hunks() {
         use crate::diff::types::{DiffContent, DiffHunk, DiffLine};
         let hunks = vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }] },
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(3), new_lineno: Some(3), content: "x\n".to_string() }] },
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(3), new_lineno: Some(3), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(4), new_lineno: Some(4), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(5), new_lineno: Some(5), content: "x\n".to_string() }] },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(3), new_lineno: Some(3), content: "x\n".to_string() }], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![DiffLine { kind: ChangeKind::Equal, old_lineno: Some(1), new_lineno: Some(1), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(2), new_lineno: Some(2), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(3), new_lineno: Some(3), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(4), new_lineno: Some(4), content: "x\n".to_string() }, DiffLine { kind: ChangeKind::Equal, old_lineno: Some(5), new_lineno: Some(5), content: "x\n".to_string() }], has_header: true },
         ];
         let dc = DiffContent { path: "t.rs".to_string(), hunks, is_binary: false };
         assert_eq!(compute_hunk_line_starts(Some(&dc)), vec![0u16, 3, 7]);
@@ -1113,5 +1254,208 @@ mod tests {
         app.diff_stale = true;
         app.update(Message::DiscardHunk);
         assert!(app.pending_discard.is_none());
+    }
+
+    // ---- full-file toggle tests ----
+
+    use crate::diff::types::{DiffHunk, DiffLine};
+
+    fn make_dc(hunks: Vec<DiffHunk>) -> DiffContent {
+        DiffContent { path: "t.rs".to_string(), hunks, is_binary: false }
+    }
+
+    fn dl(kind: ChangeKind, old: Option<u32>, new: Option<u32>) -> DiffLine {
+        DiffLine { kind, old_lineno: old, new_lineno: new, content: "x\n".to_string() }
+    }
+
+    #[test]
+    fn test_diff_line_at_row_header_resolves_to_first_line() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![dl(ChangeKind::Equal, Some(1), Some(1)), dl(ChangeKind::Insert, None, Some(2))],
+            has_header: true,
+        }]);
+        // row 0 = header → resolves to first line
+        assert_eq!(diff_line_at_row(&dc, 0), Some((ChangeKind::Equal, Some(1), Some(1))));
+        // row 1 = first content line
+        assert_eq!(diff_line_at_row(&dc, 1), Some((ChangeKind::Equal, Some(1), Some(1))));
+        // row 2 = second content line
+        assert_eq!(diff_line_at_row(&dc, 2), Some((ChangeKind::Insert, None, Some(2))));
+    }
+
+    #[test]
+    fn test_diff_line_at_row_past_end_returns_last() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![dl(ChangeKind::Equal, Some(1), Some(1))],
+            has_header: true,
+        }]);
+        assert_eq!(diff_line_at_row(&dc, 999), Some((ChangeKind::Equal, Some(1), Some(1))));
+    }
+
+    #[test]
+    fn test_diff_line_at_row_empty_or_binary_is_none() {
+        let empty = make_dc(vec![]);
+        assert_eq!(diff_line_at_row(&empty, 0), None);
+        let mut bin = make_dc(vec![]);
+        bin.is_binary = true;
+        assert_eq!(diff_line_at_row(&bin, 0), None);
+    }
+
+    #[test]
+    fn test_row_for_diff_line_finds_match() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Equal, Some(1), Some(1)),
+                dl(ChangeKind::Equal, Some(2), Some(2)),
+                dl(ChangeKind::Insert, None, Some(3)),
+            ],
+            has_header: true,
+        }]);
+        // row layout: 0 header, 1 line1, 2 line2, 3 insert
+        assert_eq!(row_for_diff_line(&dc, (ChangeKind::Equal, Some(2), Some(2))), Some(2));
+        assert_eq!(row_for_diff_line(&dc, (ChangeKind::Insert, None, Some(3))), Some(3));
+    }
+
+    #[test]
+    fn test_row_for_diff_line_returns_none_when_missing() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![dl(ChangeKind::Equal, Some(1), Some(1))],
+            has_header: true,
+        }]);
+        // line 99 is not present in this diff
+        assert_eq!(row_for_diff_line(&dc, (ChangeKind::Equal, Some(99), Some(99))), None);
+    }
+
+    #[test]
+    fn test_compute_full_diff_includes_all_lines() {
+        // 5-line file with one change in the middle: the change hunk's 3 lines
+        // of context cover the whole file, so full-file mode produces a single
+        // change hunk with no surrounding fillers.
+        let old = "a\nb\nc\nd\ne\n";
+        let new = "a\nb\nC\nd\ne\n";
+        let dc = crate::diff::compute_full_diff_content("t.rs", Some(old), Some(new));
+        assert_eq!(dc.hunks.len(), 1);
+        let hunk = &dc.hunks[0];
+        assert!(hunk.has_header);
+        // Equal a, Equal b, Delete c, Insert C, Equal d, Equal e = 6 lines
+        assert_eq!(hunk.lines.len(), 6);
+        assert!(hunk.lines.iter().any(|l| l.kind == ChangeKind::Delete));
+        assert!(hunk.lines.iter().any(|l| l.kind == ChangeKind::Insert));
+        // First and last lines are unchanged context, far from the actual change
+        assert_eq!(hunk.lines[0].kind, ChangeKind::Equal);
+        assert_eq!(hunk.lines[0].old_lineno, Some(1));
+        assert_eq!(hunk.lines.last().unwrap().new_lineno, Some(5));
+    }
+
+    #[test]
+    fn test_compute_full_diff_keeps_change_hunks_in_place_with_fillers() {
+        // 200-line file with one change at line 100. Full-file mode should
+        // produce: leading filler (no header) + change hunk (with header) +
+        // trailing filler (no header). The change hunk must keep its proper
+        // position; the gap before/after is filled without hunk headers.
+        let old: String = (1..=200).map(|n| format!("line{}\n", n)).collect();
+        let new = old.replace("line100\n", "LINE100\n");
+
+        let dc = crate::diff::compute_full_diff_content("t.rs", Some(&old), Some(&new));
+        assert_eq!(dc.hunks.len(), 3);
+
+        let leading = &dc.hunks[0];
+        assert!(!leading.has_header);
+        assert_eq!(leading.old_start, 1);
+        assert_eq!(leading.new_start, 1);
+        assert!(leading.lines.iter().all(|l| l.kind == ChangeKind::Equal));
+        assert_eq!(leading.lines.first().unwrap().new_lineno, Some(1));
+        assert_eq!(leading.lines.last().unwrap().new_lineno, Some(96));
+
+        let change = &dc.hunks[1];
+        assert!(change.has_header);
+        assert_eq!(change.old_start, 97);
+        assert_eq!(change.new_start, 97);
+        assert!(change.lines.iter().any(|l| l.kind == ChangeKind::Delete));
+        assert!(change.lines.iter().any(|l| l.kind == ChangeKind::Insert));
+
+        let trailing = &dc.hunks[2];
+        assert!(!trailing.has_header);
+        assert!(trailing.lines.iter().all(|l| l.kind == ChangeKind::Equal));
+        assert_eq!(trailing.lines.first().unwrap().new_lineno, Some(104));
+        assert_eq!(trailing.lines.last().unwrap().new_lineno, Some(200));
+    }
+
+    /// The anchor calculation maps a hunk-mode row to a full-file-mode row
+    /// such that the file line at the original 20% offset stays at 20%.
+    /// This tests the anchor-preservation logic directly using the helpers.
+    #[test]
+    fn test_anchor_preservation_across_modes() {
+        // 200-line file with a single change at line 100
+        let old: String = (1..=200).map(|n| format!("line{}\n", n)).collect();
+        let new = old.replace("line100\n", "LINE100\n");
+
+        let hunk_dc = crate::diff::compute_diff_content("t.rs", Some(&old), Some(&new));
+        let full_dc = crate::diff::compute_full_diff_content("t.rs", Some(&old), Some(&new));
+
+        // The Insert at new line 100 exists in both modes
+        let target = (ChangeKind::Insert, None, Some(100u32));
+        let hunk_row = row_for_diff_line(&hunk_dc, target).expect("insert in hunk mode");
+        let full_row = row_for_diff_line(&full_dc, target).expect("insert in full mode");
+
+        // Simulate: viewport=20, anchor at 20% = offset 4. Place target at anchor.
+        let viewport: u16 = 20;
+        let offset: u16 = (viewport as usize * 20 / 100) as u16; // = 4
+        let hunk_scroll = (hunk_row as u16).saturating_sub(offset);
+
+        // Anchor logic: walk current view to find what line is at anchor row.
+        let anchor_row = (hunk_scroll + offset) as usize;
+        let anchor = diff_line_at_row(&hunk_dc, anchor_row).expect("anchor present");
+        assert_eq!(anchor, target);
+
+        // Compute new scroll for full-file mode
+        let new_row = row_for_diff_line(&full_dc, anchor).expect("found in full");
+        assert_eq!(new_row, full_row);
+        let full_scroll = (new_row as u16).saturating_sub(offset);
+
+        // Verify the same line is again at the 20% anchor position
+        let resolved = diff_line_at_row(&full_dc, (full_scroll + offset) as usize);
+        assert_eq!(resolved, Some(target));
+    }
+
+    /// `Message::ToggleFullFile` flips the flag and reloads the diff (or clears
+    /// it when no file is selected).
+    #[test]
+    fn test_toggle_full_file_flips_flag() {
+        let mut app = test_app_with_files(vec![]);
+        assert!(!app.show_full_file);
+        app.update(Message::ToggleFullFile);
+        assert!(app.show_full_file);
+        app.update(Message::ToggleFullFile);
+        assert!(!app.show_full_file);
+    }
+
+    #[test]
+    fn test_scroll_positions_are_per_mode() {
+        // Saved scroll for hunk mode should not bleed into full-file mode.
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.scroll_positions.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            42,
+        );
+        app.scroll_positions.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, true),
+            7,
+        );
+        // Hunk mode reads false-keyed entry
+        app.show_full_file = false;
+        app.load_diff_for_selected();
+        assert_eq!(app.diff_scroll, 42);
+        // Full-file mode reads true-keyed entry
+        app.show_full_file = true;
+        app.load_diff_for_selected();
+        assert_eq!(app.diff_scroll, 7);
     }
 }

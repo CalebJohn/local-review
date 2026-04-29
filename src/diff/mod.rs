@@ -62,6 +62,7 @@ pub fn compute_hunks(old: &str, new: &str, context_lines: usize) -> Vec<DiffHunk
             old_start,
             new_start,
             lines,
+            has_header: true,
         });
     }
 
@@ -92,6 +93,121 @@ pub fn binary_diff_content(path: &str) -> DiffContent {
         path: path.to_string(),
         hunks: vec![],
         is_binary: true,
+    }
+}
+
+/// Build hunks covering the entire file: regular change hunks (with headers)
+/// interspersed with Equal-only "filler" hunks (no headers) that fill the
+/// gaps before, between, and after the change hunks. Fillers use lines from
+/// the new file (which equals old in those ranges).
+pub fn compute_full_hunks(old: &str, new: &str) -> Vec<DiffHunk> {
+    let change_hunks = compute_hunks(old, new, 3);
+
+    let old_lines: Vec<&str> = if old.is_empty() {
+        Vec::new()
+    } else {
+        old.split_inclusive('\n').collect()
+    };
+    let new_lines: Vec<&str> = if new.is_empty() {
+        Vec::new()
+    } else {
+        new.split_inclusive('\n').collect()
+    };
+    let total_old = old_lines.len() as u32;
+    let total_new = new_lines.len() as u32;
+
+    let make_filler =
+        |old_start: u32, new_start: u32, count: u32| -> DiffHunk {
+            let lines: Vec<DiffLine> = (0..count)
+                .map(|i| {
+                    let old_lno = old_start + i;
+                    let new_lno = new_start + i;
+                    let idx = (new_lno - 1) as usize;
+                    let content = new_lines
+                        .get(idx)
+                        .map(|s| s.to_string())
+                        .or_else(|| old_lines.get((old_lno - 1) as usize).map(|s| s.to_string()))
+                        .unwrap_or_default();
+                    DiffLine {
+                        kind: ChangeKind::Equal,
+                        old_lineno: Some(old_lno),
+                        new_lineno: Some(new_lno),
+                        content,
+                    }
+                })
+                .collect();
+            DiffHunk {
+                old_start,
+                new_start,
+                lines,
+                has_header: false,
+            }
+        };
+
+    if change_hunks.is_empty() {
+        if total_old == 0 && total_new == 0 {
+            return Vec::new();
+        }
+        // Files are identical (no changes). Render as one filler.
+        return vec![make_filler(1, 1, total_new.max(total_old))];
+    }
+
+    let mut result: Vec<DiffHunk> = Vec::new();
+    let mut prev_old_end: u32 = 0;
+    let mut prev_new_end: u32 = 0;
+
+    for hunk in change_hunks {
+        // Leading/inter-hunk filler covers [prev_*_end + 1, hunk_*_start - 1].
+        if hunk.old_start > prev_old_end + 1 {
+            let count = hunk.old_start - 1 - prev_old_end;
+            result.push(make_filler(prev_old_end + 1, prev_new_end + 1, count));
+        }
+
+        // Track the last old/new line covered by this change hunk.
+        let mut max_old: u32 = hunk.old_start.saturating_sub(1);
+        let mut max_new: u32 = hunk.new_start.saturating_sub(1);
+        for l in &hunk.lines {
+            if let Some(o) = l.old_lineno {
+                if o > max_old {
+                    max_old = o;
+                }
+            }
+            if let Some(n) = l.new_lineno {
+                if n > max_new {
+                    max_new = n;
+                }
+            }
+        }
+
+        result.push(hunk);
+        prev_old_end = max_old;
+        prev_new_end = max_new;
+    }
+
+    // Trailing filler covers anything after the last change hunk.
+    if prev_old_end < total_old || prev_new_end < total_new {
+        let count = total_old.saturating_sub(prev_old_end);
+        if count > 0 {
+            result.push(make_filler(prev_old_end + 1, prev_new_end + 1, count));
+        }
+    }
+
+    result
+}
+
+/// Build a DiffContent containing every line of the file in a single hunk.
+pub fn compute_full_diff_content(
+    path: &str,
+    old_content: Option<&str>,
+    new_content: Option<&str>,
+) -> DiffContent {
+    let old = old_content.unwrap_or("");
+    let new = new_content.unwrap_or("");
+    let hunks = compute_full_hunks(old, new);
+    DiffContent {
+        path: path.to_string(),
+        hunks,
+        is_binary: false,
     }
 }
 

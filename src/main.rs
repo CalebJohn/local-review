@@ -87,6 +87,17 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
     watcher.watch(&workdir, notify::RecursiveMode::Recursive)?;
 
     loop {
+        // Track current diff viewport height so anchor-preserving toggles can
+        // compute the 20% offset without needing to round-trip through ui.rs.
+        {
+            let size = terminal.size()?;
+            let area = Rect::new(0, 0, size.width, size.height);
+            let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
+                .split(area);
+            // Diff pane is wrapped in a Block with top+bottom borders (-2 rows).
+            app.diff_viewport_height = rows[0].height.saturating_sub(2);
+        }
+
         terminal.draw(|frame| ui::view(frame, &app))?;
 
         // Poll crossterm events with 100ms timeout (non-blocking)
@@ -145,6 +156,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('d') => Some(Message::DiscardFile),
                                 KeyCode::Char('D') => Some(Message::DiscardFile),
                                 KeyCode::Char('b') => Some(Message::ToggleSidebar),
+                                KeyCode::Char('f') => Some(Message::ToggleFullFile),
                                 KeyCode::Enter => Some(Message::SelectFile),
                                 KeyCode::Char('h') => Some(Message::SelectSidebar),
                                 KeyCode::Char('l') => Some(Message::SelectFile),
@@ -169,6 +181,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('d') => Some(Message::DiscardHunk),
                                 KeyCode::Char('D') => Some(Message::DiscardFile),
                                 KeyCode::Char('b') => Some(Message::ToggleSidebar),
+                                KeyCode::Char('f') => Some(Message::ToggleFullFile),
                                 KeyCode::Char('r') => Some(Message::ReloadDiff),
                                 KeyCode::Char('h') => Some(Message::SelectSidebar),
                                 KeyCode::Char('l') => Some(Message::SelectFile),
