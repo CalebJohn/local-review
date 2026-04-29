@@ -6,6 +6,8 @@ use crate::git::GitRepo;
 use crate::git::types::{ContentResult, FileEntry};
 use crate::syntax::{build_styled_diff, StyledDiffContent};
 
+const NO_ACTIVE_HUNK_MSG: &str = "No active hunk in view — press n to navigate to a hunk";
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Focus {
     Sidebar,
@@ -228,14 +230,10 @@ impl App {
             self.hunk_line_starts = compute_hunk_line_starts(self.diff_content.as_ref());
         }
 
-        // Set initial hunk index when diff loads successfully
-        if !self.hunk_line_starts.is_empty() {
-            if self.current_hunk_index.is_none() {
-                self.current_hunk_index = Some(0);
-            }
-        } else {
-            self.current_hunk_index = None;
-        }
+        // Set the active hunk based on the current (restored) scroll position so
+        // that filler "hunks" without headers are skipped and an off-screen hunk
+        // isn't treated as active.
+        self.update_hunk_from_scroll();
     }
 
     pub fn selected_file_path(&self) -> Option<String> {
@@ -403,12 +401,12 @@ impl App {
                 if self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
                     return;
                 }
+                let Some(hunk_idx) = self.current_hunk_index else {
+                    self.status_message = Some(NO_ACTIVE_HUNK_MSG.to_string());
+                    return;
+                };
                 let entry = self.selected_entry().cloned();
-                if let (Some(entry), Some(dc), Some(hunk_idx)) = (
-                    entry,
-                    self.diff_content.as_ref(),
-                    self.current_hunk_index,
-                ) {
+                if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref()) {
                     if let Some(hunk) = dc.hunks.get(hunk_idx) {
                         let old_content = self.repo.index_content(&entry.path)
                             .ok()
@@ -420,15 +418,21 @@ impl App {
                             if let Err(e) = self.repo.stage_hunk(&entry.path, &old, &new, hunk) {
                                 self.status_message = Some(format!("Stage hunk failed: {}", e));
                             }
+                            // Persist current scroll so the post-refresh reload
+                            // can restore the user's reading position instead
+                            // of jumping back to the previously saved value.
+                            self.save_scroll_position();
                             self.refresh_files();
-                            if let Some(idx) = self.current_hunk_index {
-                                if self.hunk_line_starts.is_empty() {
-                                    self.current_hunk_index = None;
-                                } else {
-                                    let clamped = idx.min(self.hunk_line_starts.len() - 1);
-                                    self.current_hunk_index = Some(clamped);
-                                    self.diff_scroll = self.hunk_line_starts[clamped];
-                                }
+                            if !self.show_full_file && !self.hunk_line_starts.is_empty() {
+                                // Hunks-only: jump to a nearby remaining hunk so
+                                // the user can keep staging. In full-file mode,
+                                // hunk indices include fillers, so clamping by
+                                // index would land on context — leave the scroll
+                                // alone and let update_hunk_from_scroll pick the
+                                // active hunk.
+                                let clamped = hunk_idx.min(self.hunk_line_starts.len() - 1);
+                                self.current_hunk_index = Some(clamped);
+                                self.diff_scroll = self.hunk_line_starts[clamped];
                             }
                         }
                     }
@@ -438,12 +442,12 @@ impl App {
                 if self.sidebar_section != SidebarSection::Staged || self.diff_stale {
                     return;
                 }
+                let Some(hunk_idx) = self.current_hunk_index else {
+                    self.status_message = Some(NO_ACTIVE_HUNK_MSG.to_string());
+                    return;
+                };
                 let entry = self.selected_entry().cloned();
-                if let (Some(entry), Some(dc), Some(hunk_idx)) = (
-                    entry,
-                    self.diff_content.as_ref(),
-                    self.current_hunk_index,
-                ) {
+                if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref()) {
                     if let Some(hunk) = dc.hunks.get(hunk_idx) {
                         let index_content = self.repo.index_content(&entry.path)
                             .ok()
@@ -452,15 +456,12 @@ impl App {
                             if let Err(e) = self.repo.unstage_hunk(&entry.path, &idx_content, hunk) {
                                 self.status_message = Some(format!("Unstage hunk failed: {}", e));
                             }
+                            self.save_scroll_position();
                             self.refresh_files();
-                            if let Some(idx) = self.current_hunk_index {
-                                if self.hunk_line_starts.is_empty() {
-                                    self.current_hunk_index = None;
-                                } else {
-                                    let clamped = idx.min(self.hunk_line_starts.len() - 1);
-                                    self.current_hunk_index = Some(clamped);
-                                    self.diff_scroll = self.hunk_line_starts[clamped];
-                                }
+                            if !self.show_full_file && !self.hunk_line_starts.is_empty() {
+                                let clamped = hunk_idx.min(self.hunk_line_starts.len() - 1);
+                                self.current_hunk_index = Some(clamped);
+                                self.diff_scroll = self.hunk_line_starts[clamped];
                             }
                         }
                     }
@@ -493,6 +494,12 @@ impl App {
                 if self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
                     return;
                 }
+                if self.current_hunk_index.is_none() {
+                    // Drop any prior pending state — confirmation context is gone.
+                    self.pending_discard = None;
+                    self.status_message = Some(NO_ACTIVE_HUNK_MSG.to_string());
+                    return;
+                }
                 let entry = self.selected_entry().cloned();
                 if let (Some(entry), Some(hunk_idx)) = (entry, self.current_hunk_index) {
                     let pending = PendingDiscard::Hunk {
@@ -512,15 +519,12 @@ impl App {
                                     if let Err(e) = self.repo.discard_hunk(&entry.path, &wc, hunk) {
                                         self.status_message = Some(format!("Discard hunk failed: {}", e));
                                     }
+                                    self.save_scroll_position();
                                     self.refresh_files();
-                                    if let Some(idx) = self.current_hunk_index {
-                                        if self.hunk_line_starts.is_empty() {
-                                            self.current_hunk_index = None;
-                                        } else {
-                                            let clamped = idx.min(self.hunk_line_starts.len() - 1);
-                                            self.current_hunk_index = Some(clamped);
-                                            self.diff_scroll = self.hunk_line_starts[clamped];
-                                        }
+                                    if !self.show_full_file && !self.hunk_line_starts.is_empty() {
+                                        let clamped = hunk_idx.min(self.hunk_line_starts.len() - 1);
+                                        self.current_hunk_index = Some(clamped);
+                                        self.diff_scroll = self.hunk_line_starts[clamped];
                                     }
                                 }
                             }
@@ -633,20 +637,33 @@ impl App {
             self.current_hunk_index = None;
             return;
         }
-        // Switch when a hunk is within 3 lines of the top of the viewport.
-        // Only consider change hunks (skip filler hunks without headers).
+        // A change hunk is "active" when both:
+        //   - its header is at or near the top of the viewport (start <= scroll+3), and
+        //   - it hasn't been scrolled off the top (end > scroll).
+        // The second clause matters in full-file view: the user can scroll well
+        // past the change into surrounding context, in which case no hunk should
+        // be marked active.
         let threshold = self.diff_scroll.saturating_add(3);
+        let viewport_top = self.diff_scroll;
         let diff = self.diff_content.as_ref();
         self.current_hunk_index = self
             .hunk_line_starts
             .iter()
             .enumerate()
-            .filter(|(i, _)| {
-                diff.and_then(|dc| dc.hunks.get(*i))
-                    .is_none_or(|h| h.has_header)
+            .filter_map(|(i, &start)| {
+                let hunk = diff?.hunks.get(i)?;
+                if !hunk.has_header {
+                    return None;
+                }
+                // header (1) + content lines
+                let length = 1u16.saturating_add(hunk.lines.len() as u16);
+                let end = start.saturating_add(length);
+                if start <= threshold && end > viewport_top {
+                    Some(i)
+                } else {
+                    None
+                }
             })
-            .filter(|(_, &s)| s <= threshold)
-            .map(|(i, _)| i)
             .next_back();
     }
 
@@ -1510,5 +1527,114 @@ mod tests {
         app.show_full_file = true;
         app.load_diff_for_selected();
         assert_eq!(app.diff_scroll, 7);
+    }
+
+    // ---- active-hunk visibility tests ----
+
+    /// Build a small App state with a single change hunk located somewhere in
+    /// the rendered diff and the corresponding `hunk_line_starts` populated.
+    /// `hunk_start_row` is the rendered row at which the hunk begins; the hunk
+    /// is `lines_count` content lines long (plus its header row).
+    fn app_with_single_change_hunk(hunk_start_row: u16, lines_count: usize) -> App {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let hunk = DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: (0..lines_count)
+                .map(|i| dl(ChangeKind::Equal, Some(i as u32 + 1), Some(i as u32 + 1)))
+                .collect(),
+            has_header: true,
+        };
+        app.diff_content = Some(make_dc(vec![hunk]));
+        app.hunk_line_starts = vec![hunk_start_row];
+        app.current_hunk_index = Some(0);
+        app
+    }
+
+    #[test]
+    fn test_update_hunk_from_scroll_clears_when_scrolled_past_hunk() {
+        // 3-line hunk at row 10 (header + 2 content = 3 rendered rows).
+        // Scrolled well past so its end row (13) is above the viewport top.
+        let mut app = app_with_single_change_hunk(10, 2);
+        app.diff_scroll = 50;
+        app.update_hunk_from_scroll();
+        assert_eq!(app.current_hunk_index, None);
+    }
+
+    #[test]
+    fn test_update_hunk_from_scroll_keeps_hunk_when_at_top() {
+        // Scroll lined up with the hunk header — it's at the top of the viewport.
+        let mut app = app_with_single_change_hunk(10, 5);
+        app.diff_scroll = 10;
+        app.update_hunk_from_scroll();
+        assert_eq!(app.current_hunk_index, Some(0));
+    }
+
+    #[test]
+    fn test_update_hunk_from_scroll_clears_when_scrolled_one_past_end() {
+        // Header at row 10, 2 content lines, last rendered row = 12.
+        // Scrolling to row 13 means the hunk has just left the viewport top.
+        let mut app = app_with_single_change_hunk(10, 2);
+        app.diff_scroll = 13;
+        app.update_hunk_from_scroll();
+        assert_eq!(app.current_hunk_index, None);
+    }
+
+    #[test]
+    fn test_update_hunk_from_scroll_full_file_no_hunk_when_in_leading_filler() {
+        // Full-file layout: leading filler at row 0 (no header) followed by a
+        // change hunk far below. Scroll=0 sits inside the filler, so no
+        // change hunk should be active.
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let leading = DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![dl(ChangeKind::Equal, Some(1), Some(1)); 90],
+            has_header: false,
+        };
+        let change = DiffHunk {
+            old_start: 91,
+            new_start: 91,
+            lines: vec![dl(ChangeKind::Insert, None, Some(91))],
+            has_header: true,
+        };
+        app.diff_content = Some(make_dc(vec![leading, change]));
+        app.hunk_line_starts = vec![0, 90];
+        app.diff_scroll = 0;
+        app.update_hunk_from_scroll();
+        assert_eq!(app.current_hunk_index, None);
+    }
+
+    #[test]
+    fn test_stage_hunk_warns_when_no_active_hunk() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = None;
+        app.update(Message::StageHunk);
+        assert!(app.status_message.as_deref().unwrap_or("").contains("No active hunk"));
+    }
+
+    #[test]
+    fn test_unstage_hunk_warns_when_no_active_hunk() {
+        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = None;
+        app.update(Message::UnstageHunk);
+        assert!(app.status_message.as_deref().unwrap_or("").contains("No active hunk"));
+    }
+
+    #[test]
+    fn test_discard_hunk_warns_and_clears_pending_when_no_active_hunk() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        // Simulate a stale pending discard from a prior hunk.
+        app.pending_discard = Some(PendingDiscard::Hunk {
+            path: "unstaged.rs".to_string(),
+            hunk_index: 0,
+        });
+        app.current_hunk_index = None;
+        app.update(Message::DiscardHunk);
+        assert!(app.pending_discard.is_none());
+        assert!(app.status_message.as_deref().unwrap_or("").contains("No active hunk"));
     }
 }
