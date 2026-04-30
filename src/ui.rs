@@ -370,6 +370,8 @@ fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             frame.render_widget(paragraph, area);
         }
         Some(dc) => {
+            let inner = block.inner(area);
+            app.diff_viewport_height.set(inner.height);
             let lines = match &app.styled_diff {
                 Some(sd) => diff_lines_styled(dc, sd, app.current_hunk_index),
                 None    => diff_lines(dc, app.current_hunk_index),

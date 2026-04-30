@@ -1,3 +1,4 @@
+use std::cell::Cell;
 use std::collections::HashMap;
 
 use crate::diff::types::{ChangeKind, DiffContent};
@@ -76,6 +77,7 @@ pub struct App {
     pub sidebar_collapsed: bool,
     pub pending_discard: Option<PendingDiscard>,
     pub show_full_file: bool,
+    pub diff_viewport_height: Cell<u16>,
 }
 
 impl App {
@@ -110,6 +112,7 @@ impl App {
             sidebar_collapsed: false,
             pending_discard: None,
             show_full_file: false,
+            diff_viewport_height: Cell::new(0),
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -637,16 +640,13 @@ impl App {
             self.current_hunk_index = None;
             return;
         }
-        // A change hunk is "active" when both:
-        //   - its header is at or near the top of the viewport (start <= scroll+3), and
-        //   - it hasn't been scrolled off the top (end > scroll).
-        // The second clause matters in full-file view: the user can scroll well
-        // past the change into surrounding context, in which case no hunk should
-        // be marked active.
-        let threshold = self.diff_scroll.saturating_add(3);
         let viewport_top = self.diff_scroll;
+        let viewport_height = self.diff_viewport_height.get();
+        let cushion = viewport_top.saturating_add(3);
+        let cushion_lower = viewport_top.saturating_add(viewport_height / 2);
         let diff = self.diff_content.as_ref();
-        self.current_hunk_index = self
+
+        let candidates: Vec<(usize, u16, u16)> = self
             .hunk_line_starts
             .iter()
             .enumerate()
@@ -655,16 +655,30 @@ impl App {
                 if !hunk.has_header {
                     return None;
                 }
-                // header (1) + content lines
                 let length = 1u16.saturating_add(hunk.lines.len() as u16);
                 let end = start.saturating_add(length);
-                if start <= threshold && end > viewport_top {
-                    Some(i)
-                } else {
-                    None
-                }
+                Some((i, start, end))
             })
-            .next_back();
+            .collect();
+
+        // Preferred: latest hunk whose header is at-or-just-below the top
+        // (the existing +3 cushion rule).
+        let cushioned = candidates
+            .iter()
+            .rfind(|(_, start, end)| *start <= cushion && *end > viewport_top)
+            .map(|(i, _, _)| *i);
+
+        // Fallback: topmost hunk that overlaps the viewport at all. Activates
+        // the next hunk as soon as any part of it scrolls into view, instead
+        // of waiting for its header to reach the top.
+        let fallback = || {
+            candidates
+                .iter()
+                .find(|(_, start, end)| *end > viewport_top && *start < cushion_lower)
+                .map(|(i, _, _)| *i)
+        };
+
+        self.current_hunk_index = cushioned.or_else(fallback);
     }
 
     /// Return (hunk_index, start_row) for change hunks only — filler hunks
@@ -857,6 +871,7 @@ mod tests {
             sidebar_collapsed: false,
             pending_discard: None,
             show_full_file: false,
+            diff_viewport_height: Cell::new(0),
         }
     }
 
@@ -1597,6 +1612,81 @@ mod tests {
         app.diff_scroll = 0;
         app.update_hunk_from_scroll();
         assert_eq!(app.current_hunk_index, None);
+    }
+
+    #[test]
+    fn test_fallback_activates_hunk_in_full_file_dead_zone() {
+        // Two hunks: first at row 5 (scrolled off), second at row 50.
+        // Viewport: top=30, height=40 → bottom=70, which includes second hunk.
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let hunk1 = DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![dl(ChangeKind::Insert, None, Some(1)); 3],
+            has_header: true,
+        };
+        let hunk2 = DiffHunk {
+            old_start: 50,
+            new_start: 50,
+            lines: vec![dl(ChangeKind::Insert, None, Some(50)); 3],
+            has_header: true,
+        };
+        app.diff_content = Some(make_dc(vec![hunk1, hunk2]));
+        app.hunk_line_starts = vec![5, 50];
+        app.diff_scroll = 35;
+        app.diff_viewport_height.set(40);
+        app.update_hunk_from_scroll();
+        assert_eq!(app.current_hunk_index, Some(1));
+    }
+
+    #[test]
+    fn test_fallback_ignores_hunks_below_viewport() {
+        // Same layout but viewport height=10 → bottom=40, second hunk at row 50
+        // is below the viewport. Expect no active hunk.
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let hunk1 = DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![dl(ChangeKind::Insert, None, Some(1)); 3],
+            has_header: true,
+        };
+        let hunk2 = DiffHunk {
+            old_start: 50,
+            new_start: 50,
+            lines: vec![dl(ChangeKind::Insert, None, Some(50)); 3],
+            has_header: true,
+        };
+        app.diff_content = Some(make_dc(vec![hunk1, hunk2]));
+        app.hunk_line_starts = vec![5, 50];
+        app.diff_scroll = 30;
+        app.diff_viewport_height.set(10);
+        app.update_hunk_from_scroll();
+        assert_eq!(app.current_hunk_index, None);
+    }
+
+    #[test]
+    fn test_cushion_wins_over_fallback() {
+        // Hunk at row 2 satisfies the cushion (start=2 <= scroll+3=3), hunk at
+        // row 10 is in viewport but cushion should take priority.
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let hunk1 = DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![dl(ChangeKind::Insert, None, Some(1)); 5],
+            has_header: true,
+        };
+        let hunk2 = DiffHunk {
+            old_start: 10,
+            new_start: 10,
+            lines: vec![dl(ChangeKind::Insert, None, Some(10)); 5],
+            has_header: true,
+        };
+        app.diff_content = Some(make_dc(vec![hunk1, hunk2]));
+        app.hunk_line_starts = vec![2, 10];
+        app.diff_scroll = 0;
+        app.diff_viewport_height.set(30);
+        app.update_hunk_from_scroll();
+        assert_eq!(app.current_hunk_index, Some(0));
     }
 
     #[test]
