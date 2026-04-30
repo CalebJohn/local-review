@@ -590,6 +590,15 @@ impl App {
             // Subtract 1 to place the header itself at the top of the viewport.
             let row = if was_header && row > 0 { row - 1 } else { row };
             self.diff_scroll = (row as u16).min(max_scroll);
+        } else if let Some(a) = anchor {
+            // Anchor line not in any hunk (e.g. a context-only Equal line in full-file view
+            // that doesn't fall within any change group). Jump to the first hunk that starts
+            // after the anchor's file line, or the last hunk if all are before it.
+            let anchor_line = a.2.or(a.1).unwrap_or(0);
+            let hunk_row = self.diff_content.as_ref()
+                .map(|dc| first_hunk_row_after(dc, anchor_line))
+                .unwrap_or(0);
+            self.diff_scroll = hunk_row.min(max_scroll);
         } else {
             self.diff_scroll = prior_scroll.min(max_scroll);
         }
@@ -797,6 +806,26 @@ pub fn row_for_diff_line(dc: &DiffContent, target: DiffLineKey) -> Option<usize>
         }
     }
     None
+}
+
+/// Return the rendered start row of the first hunk in `dc` whose new-file start
+/// line exceeds `anchor_line`. Falls back to the last hunk's row when all hunks
+/// begin at or before `anchor_line`.
+fn first_hunk_row_after(dc: &DiffContent, anchor_line: u32) -> u16 {
+    let mut row: usize = 0;
+    let mut last_hunk_row: u16 = 0;
+    for hunk in &dc.hunks {
+        let hunk_row = row as u16;
+        if hunk.new_start > anchor_line {
+            return hunk_row;
+        }
+        last_hunk_row = hunk_row;
+        if hunk.has_header {
+            row += 1;
+        }
+        row += hunk.lines.len();
+    }
+    last_hunk_row
 }
 
 pub fn compute_hunk_line_starts(dc: Option<&DiffContent>) -> Vec<u16> {
