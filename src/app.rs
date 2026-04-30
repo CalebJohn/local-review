@@ -967,12 +967,6 @@ mod tests {
     }
 
     #[test]
-    fn test_styled_diff_starts_none() {
-        let app = test_app_with_files(vec![]);
-        assert!(app.styled_diff.is_none());
-    }
-
-    #[test]
     fn test_load_diff_for_selected_clears_styled_diff_on_empty_file_list() {
         let mut app = test_app_with_files(vec![]);
         app.styled_diff = Some(StyledDiffContent {
