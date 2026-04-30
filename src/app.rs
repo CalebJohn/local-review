@@ -126,11 +126,14 @@ impl App {
             .filter(|f| f.index_status.is_some())
             .cloned()
             .collect();
-        let unstaged: Vec<FileEntry> = files
+        let mut unstaged: Vec<FileEntry> = files
             .iter()
             .filter(|f| f.workdir_status.is_some())
             .cloned()
             .collect();
+        unstaged.sort_by_key(|f| {
+            matches!(f.workdir_status, Some(crate::git::types::FileStatus::Untracked))
+        });
         (staged, unstaged)
     }
 
