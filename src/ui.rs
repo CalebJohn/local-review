@@ -315,12 +315,20 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
                 spans.extend([Span::styled(" d ", key_style), Span::styled(" discard hunk ", desc_style), sep.clone()]);
                 spans.extend([Span::styled(" D ", key_style), Span::styled(" discard file ", desc_style), sep.clone()]);
             }
+            spans.extend([Span::styled(" c ", key_style), Span::styled(" comment ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" f ", key_style), Span::styled(full_file_label, desc_style), sep.clone()]);
             spans.extend([Span::styled(" b ", key_style), Span::styled(if app.sidebar_collapsed { " show sidebar " } else { " hide sidebar " }, desc_style), sep.clone()]);
             spans.extend([Span::styled(" Tab ", key_style), Span::styled(" switch pane ", desc_style), sep]);
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
+        }
+        Focus::CommentInput => {
+            spans.extend([
+                Span::styled("comment: ", Style::default().fg(Color::White)),
+                Span::raw(&app.comment_input),
+                Span::raw("\u{2588}"),
+            ]);
         }
     }
 
@@ -329,7 +337,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
 }
 
 fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
-    let focused = app.focus == Focus::DiffView;
+    let focused = matches!(app.focus, Focus::DiffView | Focus::CommentInput);
     let path = app
         .diff_content
         .as_ref()

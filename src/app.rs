@@ -1,7 +1,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 
-use crate::diff::types::{ChangeKind, DiffContent};
+use crate::diff::types::{ChangeKind, DiffContent, DiffHunk};
 use crate::diff::{binary_diff_content, compute_diff_content, compute_full_diff_content};
 use crate::git::GitRepo;
 use crate::git::types::{ContentResult, FileEntry};
@@ -14,6 +14,7 @@ const NO_ACTIVE_HUNK_MSG: &str = "No active hunk in view — press n to navigate
 pub enum Focus {
     Sidebar,
     DiffView,
+    CommentInput,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,6 +27,13 @@ pub enum SidebarSection {
 pub enum PendingDiscard {
     File { path: String },
     Hunk { path: String, hunk_index: usize },
+}
+
+#[derive(Debug, Clone)]
+pub struct CommentContext {
+    pub file_path: String,
+    pub section: SidebarSection,
+    pub hunk_index: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -58,6 +66,11 @@ pub enum Message {
     ToggleFullFile,
     Undo,
     Redo,
+    StartComment,
+    CommentInputChar(char),
+    CommentInputBackspace,
+    CommentInputSubmit,
+    CommentInputCancel,
 }
 
 pub struct App {
@@ -82,6 +95,8 @@ pub struct App {
     pub show_full_file: bool,
     pub diff_viewport_height: Cell<u16>,
     pub undo: UndoManager,
+    pub comment_input: String,
+    pub comment_context: Option<CommentContext>,
 }
 
 impl App {
@@ -118,6 +133,8 @@ impl App {
             show_full_file: false,
             diff_viewport_height: Cell::new(0),
             undo: UndoManager::new(),
+            comment_input: String::new(),
+            comment_context: None,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -333,7 +350,7 @@ impl App {
                 self.sidebar_collapsed = false;
                 self.focus = match self.focus {
                     Focus::Sidebar => Focus::DiffView,
-                    Focus::DiffView => Focus::Sidebar,
+                    Focus::DiffView | Focus::CommentInput => Focus::Sidebar,
                 };
             }
             Message::ToggleSidebar => {
@@ -616,6 +633,49 @@ impl App {
                     }
                 }
             }
+            Message::StartComment => {
+                let Some(hunk_idx) = self.current_hunk_index else {
+                    self.status_message = Some(NO_ACTIVE_HUNK_MSG.to_string());
+                    return;
+                };
+                let Some(entry) = self.selected_entry() else {
+                    self.status_message = Some("No file selected".to_string());
+                    return;
+                };
+                self.comment_context = Some(CommentContext {
+                    file_path: entry.path.clone(),
+                    section: self.sidebar_section,
+                    hunk_index: hunk_idx,
+                });
+                self.comment_input.clear();
+                self.focus = Focus::CommentInput;
+            }
+            Message::CommentInputChar(c) => {
+                self.comment_input.push(c);
+            }
+            Message::CommentInputBackspace => {
+                self.comment_input.pop();
+            }
+            Message::CommentInputSubmit => {
+                if let Some(ctx) = self.comment_context.take() {
+                    let hunk = self.diff_content.as_ref()
+                        .and_then(|dc| dc.hunks.get(ctx.hunk_index));
+                    if let Some(hunk) = hunk {
+                        let text = format_comment(&ctx, hunk, &self.comment_input);
+                        match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text)) {
+                            Ok(()) => self.status_message = Some("Copied to clipboard".to_string()),
+                            Err(e) => self.status_message = Some(format!("Clipboard error: {}", e)),
+                        }
+                    }
+                }
+                self.comment_input.clear();
+                self.focus = Focus::DiffView;
+            }
+            Message::CommentInputCancel => {
+                self.comment_input.clear();
+                self.comment_context = None;
+                self.focus = Focus::DiffView;
+            }
         }
     }
 
@@ -894,6 +954,33 @@ fn first_hunk_row_after(dc: &DiffContent, anchor_line: u32) -> u16 {
     last_hunk_row
 }
 
+pub fn format_comment(context: &CommentContext, hunk: &DiffHunk, comment: &str) -> String {
+    let section_label = match context.section {
+        SidebarSection::Staged => "staged",
+        SidebarSection::Unstaged => "unstaged",
+    };
+
+    let old_count = hunk.lines.iter().filter(|l| matches!(l.kind, ChangeKind::Delete | ChangeKind::Equal)).count();
+    let new_count = hunk.lines.iter().filter(|l| matches!(l.kind, ChangeKind::Insert | ChangeKind::Equal)).count();
+
+    let mut out = String::new();
+    out.push_str(&format!("File: {} ({})\n", context.file_path, section_label));
+    out.push_str(&format!("@@ -{},{} +{},{} @@\n\n", hunk.old_start, old_count, hunk.new_start, new_count));
+
+    for line in &hunk.lines {
+        let prefix = match line.kind {
+            ChangeKind::Equal => ' ',
+            ChangeKind::Insert => '+',
+            ChangeKind::Delete => '-',
+        };
+        out.push(prefix);
+        out.push_str(&line.content);
+    }
+
+    out.push_str(&format!("\nComment: {}\n", comment));
+    out
+}
+
 pub fn compute_hunk_line_starts(dc: Option<&DiffContent>) -> Vec<u16> {
     let Some(dc) = dc else { return Vec::new(); };
     if dc.is_binary { return Vec::new(); }
@@ -968,6 +1055,8 @@ mod tests {
             show_full_file: false,
             diff_viewport_height: Cell::new(0),
             undo: UndoManager::new(),
+            comment_input: String::new(),
+            comment_context: None,
         }
     }
 
@@ -1816,5 +1905,112 @@ mod tests {
         app.update(Message::DiscardHunk);
         assert!(app.pending_discard.is_none());
         assert!(app.status_message.as_deref().unwrap_or("").contains("No active hunk"));
+    }
+
+    // ---- format_comment tests ----
+
+    #[test]
+    fn test_format_comment_full_hunk() {
+        let ctx = CommentContext {
+            file_path: "src/main.rs".to_string(),
+            section: SidebarSection::Unstaged,
+            hunk_index: 0,
+        };
+        let hunk = DiffHunk {
+            old_start: 10,
+            new_start: 10,
+            lines: vec![
+                dl(ChangeKind::Equal, Some(10), Some(10)),
+                dl(ChangeKind::Delete, Some(11), None),
+                dl(ChangeKind::Insert, None, Some(11)),
+                dl(ChangeKind::Equal, Some(12), Some(12)),
+            ],
+            has_header: true,
+        };
+        let result = format_comment(&ctx, &hunk, "This looks wrong");
+        assert!(result.starts_with("File: src/main.rs (unstaged)\n"));
+        assert!(result.contains("@@ -10,3 +10,3 @@"));
+        assert!(result.contains("\nComment: This looks wrong\n"));
+        assert!(result.contains(" x\n"));
+        assert!(result.contains("-x\n"));
+        assert!(result.contains("+x\n"));
+    }
+
+    #[test]
+    fn test_format_comment_staged_section() {
+        let ctx = CommentContext {
+            file_path: "lib.rs".to_string(),
+            section: SidebarSection::Staged,
+            hunk_index: 0,
+        };
+        let hunk = DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Insert, None, Some(1)),
+            ],
+            has_header: true,
+        };
+        let result = format_comment(&ctx, &hunk, "New line added");
+        assert!(result.contains("(staged)"));
+        assert!(result.contains("@@ -1,0 +1,1 @@"));
+    }
+
+    // ---- comment update logic tests ----
+
+    #[test]
+    fn test_start_comment_captures_context() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = Some(2);
+        app.update(Message::StartComment);
+        assert_eq!(app.focus, Focus::CommentInput);
+        assert!(app.comment_context.is_some());
+        let ctx = app.comment_context.as_ref().unwrap();
+        assert_eq!(ctx.file_path, "unstaged.rs");
+        assert_eq!(ctx.section, SidebarSection::Unstaged);
+        assert_eq!(ctx.hunk_index, 2);
+        assert!(app.comment_input.is_empty());
+    }
+
+    #[test]
+    fn test_start_comment_ignored_when_no_hunk() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.current_hunk_index = None;
+        app.update(Message::StartComment);
+        assert_eq!(app.focus, Focus::DiffView);
+        assert!(app.comment_context.is_none());
+    }
+
+    #[test]
+    fn test_comment_input_char_and_backspace() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::CommentInput;
+        app.update(Message::CommentInputChar('h'));
+        app.update(Message::CommentInputChar('i'));
+        assert_eq!(app.comment_input, "hi");
+        app.update(Message::CommentInputBackspace);
+        assert_eq!(app.comment_input, "h");
+        app.update(Message::CommentInputBackspace);
+        assert!(app.comment_input.is_empty());
+        app.update(Message::CommentInputBackspace);
+        assert!(app.comment_input.is_empty());
+    }
+
+    #[test]
+    fn test_comment_input_cancel_clears_state() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::CommentInput;
+        app.comment_input = "partial".to_string();
+        app.comment_context = Some(CommentContext {
+            file_path: "unstaged.rs".to_string(),
+            section: SidebarSection::Unstaged,
+            hunk_index: 0,
+        });
+        app.update(Message::CommentInputCancel);
+        assert_eq!(app.focus, Focus::DiffView);
+        assert!(app.comment_input.is_empty());
+        assert!(app.comment_context.is_none());
     }
 }

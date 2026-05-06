@@ -113,6 +113,20 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 _ => {}
                             }
                         }
+                        if app.focus == Focus::CommentInput {
+                            let msg = match key.code {
+                                KeyCode::Char(c) => Some(Message::CommentInputChar(c)),
+                                KeyCode::Backspace => Some(Message::CommentInputBackspace),
+                                KeyCode::Enter => Some(Message::CommentInputSubmit),
+                                KeyCode::Esc => Some(Message::CommentInputCancel),
+                                _ => None,
+                            };
+                            if let Some(msg) = msg {
+                                app.update(msg);
+                            }
+                            continue;
+                        }
+
                         // 'e' is handled directly (needs terminal access), not via Message
                         if key.code == KeyCode::Char('e') {
                             if let Some(rel_path) = app.selected_file_path() {
@@ -174,6 +188,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('D') => Some(Message::DiscardFile),
                                 KeyCode::Char('b') => Some(Message::ToggleSidebar),
                                 KeyCode::Char('f') => Some(Message::ToggleFullFile),
+                                KeyCode::Char('c') => Some(Message::StartComment),
                                 KeyCode::Char('r') => Some(Message::ReloadDiff),
                                 KeyCode::Char('h') => Some(Message::SelectSidebar),
                                 KeyCode::Char('l') => Some(Message::SelectFile),
@@ -183,6 +198,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Esc => Some(Message::SwitchFocus),
                                 _ => None,
                             },
+                            Focus::CommentInput => unreachable!(),
                         };
                         if let Some(msg) = msg {
                             app.update(msg);
