@@ -1,8 +1,47 @@
 pub mod types;
 
 use std::path::Path;
+#[cfg(unix)]
+use std::os::unix::ffi::OsStrExt;
 use crate::diff::types::{ChangeKind, DiffHunk};
 use types::{ContentResult, FileEntry, FileStatus};
+
+#[derive(Debug, Clone)]
+pub enum WorkdirSnapshot {
+    Absent,
+    Regular { blob: git2::Oid, executable: bool },
+    Symlink { blob: git2::Oid },
+}
+
+#[derive(Debug, Clone)]
+pub struct Snapshot {
+    pub(crate) path: String,
+    pub(crate) index_blob: Option<git2::Oid>,
+    pub(crate) index_mode: Option<u32>,
+    pub(crate) workdir: WorkdirSnapshot,
+}
+
+#[cfg(unix)]
+fn is_executable(meta: &std::fs::Metadata) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    meta.permissions().mode() & 0o111 != 0
+}
+
+#[cfg(not(unix))]
+fn is_executable(_meta: &std::fs::Metadata) -> bool {
+    false
+}
+
+/// Create a symlink at `link` pointing to `target`.
+#[cfg(unix)]
+fn create_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(target, link)
+}
+
+#[cfg(windows)]
+fn create_symlink(target: &Path, link: &Path) -> std::io::Result<()> {
+    std::os::windows::fs::symlink_file(target, link)
+}
 
 pub struct GitRepo {
     repo: git2::Repository,
@@ -160,6 +199,13 @@ impl GitRepo {
         self.repo.workdir()
     }
 
+    fn workdir_or_err(&self) -> Result<&Path, Box<dyn std::error::Error>> {
+        self.repo.workdir()
+            .ok_or_else(|| -> Box<dyn std::error::Error> {
+                "bare repository has no working directory".into()
+            })
+    }
+
     pub fn git_dir(&self) -> &Path {
         self.repo.path()
     }
@@ -188,7 +234,7 @@ impl GitRepo {
         Ok(files)
     }
 
-    pub fn head_content(&self, path: &str) -> Result<ContentResult, git2::Error> {
+    pub fn head_content(&self, path: &str) -> Result<ContentResult, Box<dyn std::error::Error>> {
         let head = match self.repo.head() {
             Ok(h) => h,
             Err(_) => return Ok(ContentResult::NotFound),
@@ -210,7 +256,7 @@ impl GitRepo {
         }
     }
 
-    pub fn index_content(&self, path: &str) -> Result<ContentResult, git2::Error> {
+    pub fn index_content(&self, path: &str) -> Result<ContentResult, Box<dyn std::error::Error>> {
         let index = self.repo.index()?;
         match index.get_path(Path::new(path), 0) {
             Some(entry) => {
@@ -229,13 +275,21 @@ impl GitRepo {
     }
 
     pub fn workdir_content(&self, path: &str) -> Result<ContentResult, Box<dyn std::error::Error>> {
-        let workdir = self
-            .repo
-            .workdir()
-            .ok_or_else(|| -> Box<dyn std::error::Error> {
-                "bare repository has no working directory".into()
-            })?;
+        let workdir = self.workdir_or_err()?;
         let full_path = workdir.join(path);
+
+        // Symlinks: return the target path as text content (matching git blob semantics)
+        if let Ok(meta) = std::fs::symlink_metadata(&full_path) {
+            if meta.file_type().is_symlink() {
+                let target = std::fs::read_link(&full_path)?;
+                #[cfg(unix)]
+                let text = String::from_utf8_lossy(target.as_os_str().as_bytes()).into_owned();
+                #[cfg(not(unix))]
+                let text = target.to_string_lossy().into_owned();
+                return Ok(ContentResult::Text(text));
+            }
+        }
+
         match std::fs::read(&full_path) {
             Ok(bytes) => {
                 if is_binary_content(&bytes) {
@@ -279,7 +333,7 @@ impl GitRepo {
         Ok(())
     }
 
-    pub fn stage_hunk(&self, path: &str, old_content: &str, _new_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
+    pub fn stage_hunk(&self, path: &str, old_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
         let new_text = apply_hunk_to_content(old_content, hunk);
 
         let mut index = self.repo.index()?;
@@ -314,12 +368,7 @@ impl GitRepo {
     }
 
     pub fn discard_file(&self, path: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let workdir = self
-            .repo
-            .workdir()
-            .ok_or_else(|| -> Box<dyn std::error::Error> {
-                "bare repository has no working directory".into()
-            })?;
+        let workdir = self.workdir_or_err()?;
 
         let index = self.repo.index()?;
         if index.get_path(Path::new(path), 0).is_some() {
@@ -337,23 +386,154 @@ impl GitRepo {
     }
 
     pub fn discard_hunk(&self, path: &str, workdir_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
-        let workdir = self
-            .repo
-            .workdir()
-            .ok_or_else(|| -> Box<dyn std::error::Error> {
-                "bare repository has no working directory".into()
-            })?;
+        let workdir = self.workdir_or_err()?;
 
         let new_content = reverse_apply_hunk_to_content(workdir_content, hunk);
         let full_path = workdir.join(path);
+
+        // Preserve symlinks: if the workdir entry is a symlink, recreate it
+        // rather than replacing it with a regular file.
+        // Here new_content is the symlink target string, not file content.
+        if let Ok(meta) = std::fs::symlink_metadata(&full_path) {
+            if meta.file_type().is_symlink() {
+                std::fs::remove_file(&full_path)?;
+                create_symlink(Path::new(&new_content), &full_path)?;
+                return Ok(());
+            }
+        }
+
         std::fs::write(&full_path, new_content)?;
         Ok(())
+    }
+
+    pub fn snapshot_path(
+        &self,
+        path: &str,
+    ) -> Result<Snapshot, Box<dyn std::error::Error>> {
+        let index = self.repo.index()?;
+        let (index_blob, index_mode) = match index.get_path(Path::new(path), 0) {
+            Some(entry) => (Some(entry.id), Some(entry.mode)),
+            None => (None, None),
+        };
+        let workdir = self.workdir_snapshot(path)?;
+        Ok(Snapshot {
+            path: path.to_string(),
+            index_blob,
+            index_mode,
+            workdir,
+        })
+    }
+
+    pub fn restore_snapshot(&self, snap: &Snapshot) -> Result<(), Box<dyn std::error::Error>> {
+        let mut index = self.repo.index()?;
+
+        match snap.index_blob {
+            Some(oid) => {
+                let blob = self.repo.find_blob(oid)?;
+                let mut entry = self.index_entry_for_path(&index, &snap.path);
+                if let Some(mode) = snap.index_mode {
+                    entry.mode = mode;
+                }
+                index.add_frombuffer(&entry, blob.content())?;
+            }
+            None => {
+                index.remove_path(Path::new(&snap.path))?;
+            }
+        }
+        index.write()?;
+
+        let workdir = self.workdir_or_err()?;
+        let full_path = workdir.join(&snap.path);
+
+        match &snap.workdir {
+            WorkdirSnapshot::Symlink { blob } => {
+                let content = self.repo.find_blob(*blob)?;
+                #[cfg(unix)]
+                let target = {
+                    use std::ffi::OsStr;
+                    std::path::PathBuf::from(OsStr::from_bytes(content.content()))
+                };
+                #[cfg(not(unix))]
+                let target = std::path::PathBuf::from(
+                    std::str::from_utf8(content.content())?,
+                );
+                if let Some(parent) = full_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                if std::fs::symlink_metadata(&full_path).is_ok() {
+                    std::fs::remove_file(&full_path)?;
+                }
+                create_symlink(&target, &full_path)?;
+            }
+            WorkdirSnapshot::Regular { blob, executable } => {
+                let content = self.repo.find_blob(*blob)?;
+                if let Some(parent) = full_path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                if std::fs::symlink_metadata(&full_path).is_ok() {
+                    std::fs::remove_file(&full_path)?;
+                }
+                std::fs::write(&full_path, content.content())?;
+                #[cfg(unix)]
+                if *executable {
+                    use std::os::unix::fs::PermissionsExt;
+                    let mut perms = std::fs::metadata(&full_path)?.permissions();
+                    perms.set_mode(perms.mode() | 0o111);
+                    std::fs::set_permissions(&full_path, perms)?;
+                }
+            }
+            WorkdirSnapshot::Absent => {
+                if std::fs::symlink_metadata(&full_path).is_ok() {
+                    std::fs::remove_file(&full_path)?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn workdir_snapshot(&self, path: &str) -> Result<WorkdirSnapshot, Box<dyn std::error::Error>> {
+        let workdir = self.workdir_or_err()?;
+        let full_path = workdir.join(path);
+
+        match std::fs::symlink_metadata(&full_path) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                let target = std::fs::read_link(&full_path)?;
+                #[cfg(unix)]
+                let target_bytes = target.as_os_str().as_bytes();
+                #[cfg(not(unix))]
+                let target_bytes = target.to_str()
+                    .ok_or("non-UTF-8 symlink target on non-unix")?
+                    .as_bytes();
+                let blob = self.repo.blob(target_bytes)?;
+                Ok(WorkdirSnapshot::Symlink { blob })
+            }
+            Ok(meta) => {
+                let executable = is_executable(&meta);
+                let bytes = std::fs::read(&full_path)?;
+                let blob = self.repo.blob(&bytes)?;
+                Ok(WorkdirSnapshot::Regular { blob, executable })
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(WorkdirSnapshot::Absent),
+            Err(e) => Err(Box::new(e)),
+        }
     }
 
     fn index_entry_for_path(&self, index: &git2::Index, path: &str) -> git2::IndexEntry {
         if let Some(existing) = index.get_path(Path::new(path), 0) {
             existing
         } else {
+            // Fallback entry assumes a regular file. Symlinks (mode 0o120000) should
+            // always have an existing index entry, since hunk-staging only applies to
+            // files already tracked.
+            debug_assert!(
+                !self.repo.workdir()
+                    .map(|wd| std::fs::symlink_metadata(wd.join(path))
+                        .map(|m| m.file_type().is_symlink())
+                        .unwrap_or(false))
+                    .unwrap_or(false),
+                "index_entry_for_path fallback reached for symlink: {path}"
+            );
             git2::IndexEntry {
                 ctime: git2::IndexTime::new(0, 0),
                 mtime: git2::IndexTime::new(0, 0),
@@ -741,7 +921,7 @@ mod tests {
 
         // Stage only the second hunk using GitRepo
         let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
-        git_repo.stage_hunk("test.txt", old_content, new_content, &hunks[1]).unwrap();
+        git_repo.stage_hunk("test.txt", old_content, &hunks[1]).unwrap();
 
         // Verify workdir is preserved (should still have both changes)
         let workdir_after = std::fs::read_to_string(&file_path).unwrap();
@@ -1203,6 +1383,284 @@ mod tests {
 
         let after = std::fs::read_to_string(&file_path).unwrap();
         assert_eq!(after, staged, "Workdir should match index (staged content)");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    fn make_repo_with_symlink(name: &str, target: &str) -> (std::path::PathBuf, GitRepo, std::path::PathBuf) {
+        let tmpdir = std::env::temp_dir().join(format!("symlink_{}_test_{}", name, std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        let repo = git2::Repository::init(&tmpdir).expect("init repo");
+        repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+        repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+        let link_path = tmpdir.join("link");
+        std::os::unix::fs::symlink(target, &link_path).unwrap();
+
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("link")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        (tmpdir, git_repo, link_path)
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_workdir_content_returns_symlink_target_as_text() {
+        let (tmpdir, git_repo, _link_path) = make_repo_with_symlink("content", "target.txt");
+
+        let content = git_repo.workdir_content("link").unwrap();
+        assert_eq!(content, ContentResult::Text("target.txt".to_string()));
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_snapshot_captures_symlink_target() {
+        let (tmpdir, git_repo, _link_path) = make_repo_with_symlink("snap", "original_target");
+
+        let snap = git_repo.snapshot_path("link").unwrap();
+        assert!(matches!(snap.workdir, WorkdirSnapshot::Symlink { .. }));
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_restore_snapshot_roundtrips_symlink() {
+        let (tmpdir, git_repo, link_path) = make_repo_with_symlink("restore", "original_target");
+        let snap = git_repo.snapshot_path("link").unwrap();
+
+        // Change the symlink target
+        std::fs::remove_file(&link_path).unwrap();
+        std::os::unix::fs::symlink("new_target", &link_path).unwrap();
+
+        // Restore should bring back the original symlink
+        git_repo.restore_snapshot(&snap).unwrap();
+        let target = std::fs::read_link(&link_path).unwrap();
+        assert_eq!(target, std::path::PathBuf::from("original_target"));
+        assert!(std::fs::symlink_metadata(&link_path).unwrap().file_type().is_symlink());
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_restore_snapshot_regular_file_to_symlink() {
+        let tmpdir = std::env::temp_dir().join(format!("symlink_file2link_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        let repo = git2::Repository::init(&tmpdir).expect("init repo");
+        repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+        repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+        // Start with a symlink, snapshot it
+        let file_path = tmpdir.join("entry");
+        std::os::unix::fs::symlink("link_target", &file_path).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("entry")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let snap = git_repo.snapshot_path("entry").unwrap();
+
+        // Replace symlink with a regular file
+        std::fs::remove_file(&file_path).unwrap();
+        std::fs::write(&file_path, "regular content").unwrap();
+
+        // Restore should bring back the symlink
+        git_repo.restore_snapshot(&snap).unwrap();
+        assert!(std::fs::symlink_metadata(&file_path).unwrap().file_type().is_symlink());
+        assert_eq!(std::fs::read_link(&file_path).unwrap(), std::path::PathBuf::from("link_target"));
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_restore_snapshot_symlink_to_regular_file() {
+        let tmpdir = std::env::temp_dir().join(format!("symlink_link2file_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        let repo = git2::Repository::init(&tmpdir).expect("init repo");
+        repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+        repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+        // Start with a regular file, snapshot it
+        let file_path = tmpdir.join("entry");
+        std::fs::write(&file_path, "regular content").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("entry")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let snap = git_repo.snapshot_path("entry").unwrap();
+
+        // Replace regular file with a symlink
+        std::fs::remove_file(&file_path).unwrap();
+        std::os::unix::fs::symlink("some_target", &file_path).unwrap();
+
+        // Restore should bring back the regular file
+        git_repo.restore_snapshot(&snap).unwrap();
+        assert!(std::fs::symlink_metadata(&file_path).unwrap().file_type().is_file());
+        assert_eq!(std::fs::read_to_string(&file_path).unwrap(), "regular content");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_snapshot_dangling_symlink() {
+        let (tmpdir, git_repo, link_path) = make_repo_with_symlink("dangling", "nonexistent_target");
+
+        // The symlink target doesn't exist — it's dangling
+        assert!(!std::path::Path::new("nonexistent_target").exists());
+
+        let snap = git_repo.snapshot_path("link").unwrap();
+        assert!(matches!(snap.workdir, WorkdirSnapshot::Symlink { .. }));
+
+        // Delete and restore
+        std::fs::remove_file(&link_path).unwrap();
+        git_repo.restore_snapshot(&snap).unwrap();
+
+        let target = std::fs::read_link(&link_path).unwrap();
+        assert_eq!(target, std::path::PathBuf::from("nonexistent_target"));
+        assert!(std::fs::symlink_metadata(&link_path).unwrap().file_type().is_symlink());
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_discard_hunk_preserves_symlink() {
+        let (tmpdir, git_repo, link_path) = make_repo_with_symlink("discard", "original_target");
+
+        // Change the symlink target (this is the "workdir" change)
+        std::fs::remove_file(&link_path).unwrap();
+        std::os::unix::fs::symlink("modified_target", &link_path).unwrap();
+
+        use crate::diff::compute_hunks;
+        let hunks = compute_hunks("original_target", "modified_target", 3);
+        assert_eq!(hunks.len(), 1);
+
+        git_repo.discard_hunk("link", "modified_target", &hunks[0]).unwrap();
+
+        let target = std::fs::read_link(&link_path).unwrap();
+        assert_eq!(target, std::path::PathBuf::from("original_target"));
+        assert!(std::fs::symlink_metadata(&link_path).unwrap().file_type().is_symlink());
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_snapshot_captures_executable_bit() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmpdir = std::env::temp_dir().join(format!("exec_snap_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        {
+            let repo = git2::Repository::init(&tmpdir).expect("init repo");
+            repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+            repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+            let file_path = tmpdir.join("script.sh");
+            std::fs::write(&file_path, "#!/bin/sh\necho hello\n").unwrap();
+            let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
+            perms.set_mode(0o100755);
+            std::fs::set_permissions(&file_path, perms).unwrap();
+
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("script.sh")).unwrap();
+            index.write().unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            let sig = repo.signature().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        }
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let file_path = tmpdir.join("script.sh");
+        let snap = git_repo.snapshot_path("script.sh").unwrap();
+
+        assert!(matches!(snap.workdir, WorkdirSnapshot::Regular { executable: true, .. }), "snapshot should capture executable bit");
+        assert_eq!(snap.index_mode, Some(0o100755), "snapshot should capture index mode");
+
+        // Overwrite with a non-executable regular file and remove from index
+        std::fs::write(&file_path, "overwritten\n").unwrap();
+        git_repo.unstage_file("script.sh").unwrap();
+
+        // Restore should bring back executable bit in both index and workdir
+        git_repo.restore_snapshot(&snap).unwrap();
+
+        let meta = std::fs::metadata(&file_path).unwrap();
+        assert!(meta.permissions().mode() & 0o111 != 0, "workdir file should be executable after restore");
+
+        let index = git_repo.repo.index().unwrap();
+        let entry = index.get_path(Path::new("script.sh"), 0).expect("entry should exist");
+        assert_eq!(entry.mode, 0o100755, "index entry should have executable mode after restore");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_snapshot_non_executable_stays_non_executable() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let tmpdir = std::env::temp_dir().join(format!("noexec_snap_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+
+        {
+            let repo = git2::Repository::init(&tmpdir).expect("init repo");
+            repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+            repo.config().unwrap().set_str("user.name", "Test").unwrap();
+
+            let file_path = tmpdir.join("data.txt");
+            std::fs::write(&file_path, "just data\n").unwrap();
+
+            let mut index = repo.index().unwrap();
+            index.add_path(Path::new("data.txt")).unwrap();
+            index.write().unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            let sig = repo.signature().unwrap();
+            repo.commit(Some("HEAD"), &sig, &sig, "initial", &tree, &[]).unwrap();
+        }
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let file_path = tmpdir.join("data.txt");
+        let snap = git_repo.snapshot_path("data.txt").unwrap();
+
+        assert!(matches!(snap.workdir, WorkdirSnapshot::Regular { executable: false, .. }), "non-executable file should not be marked executable");
+        assert_eq!(snap.index_mode, Some(0o100644));
+
+        // Make executable, then restore — should go back to non-executable
+        let mut perms = std::fs::metadata(&file_path).unwrap().permissions();
+        perms.set_mode(0o100755);
+        std::fs::set_permissions(&file_path, perms).unwrap();
+
+        git_repo.restore_snapshot(&snap).unwrap();
+
+        let meta = std::fs::metadata(&file_path).unwrap();
+        assert_eq!(meta.permissions().mode() & 0o111, 0, "workdir file should not be executable after restore");
 
         let _ = std::fs::remove_dir_all(&tmpdir);
     }

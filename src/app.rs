@@ -6,6 +6,7 @@ use crate::diff::{binary_diff_content, compute_diff_content, compute_full_diff_c
 use crate::git::GitRepo;
 use crate::git::types::{ContentResult, FileEntry};
 use crate::syntax::{build_styled_diff, StyledDiffContent};
+use crate::undo::{UndoManager, UndoOutcome};
 
 const NO_ACTIVE_HUNK_MSG: &str = "No active hunk in view — press n to navigate to a hunk";
 
@@ -55,6 +56,8 @@ pub enum Message {
     IndexChanged,
     ReloadDiff,
     ToggleFullFile,
+    Undo,
+    Redo,
 }
 
 pub struct App {
@@ -78,6 +81,7 @@ pub struct App {
     pub pending_discard: Option<PendingDiscard>,
     pub show_full_file: bool,
     pub diff_viewport_height: Cell<u16>,
+    pub undo: UndoManager,
 }
 
 impl App {
@@ -113,6 +117,7 @@ impl App {
             pending_discard: None,
             show_full_file: false,
             diff_viewport_height: Cell::new(0),
+            undo: UndoManager::new(),
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -389,16 +394,28 @@ impl App {
             }
             Message::StageFile => {
                 if let Some(entry) = self.selected_entry().cloned() {
+                    if let Err(e) = self.undo.record(&self.repo, "stage file", std::slice::from_ref(&entry.path)) {
+                        self.status_message = Some(format!("Stage failed: {}", e));
+                        self.refresh_files();
+                        return;
+                    }
                     if let Err(e) = self.repo.stage_file(&entry.path) {
                         self.status_message = Some(format!("Stage failed: {}", e));
+                        self.undo.discard_last();
                     }
                     self.refresh_files();
                 }
             }
             Message::UnstageFile => {
                 if let Some(entry) = self.selected_entry().cloned() {
+                    if let Err(e) = self.undo.record(&self.repo, "unstage file", std::slice::from_ref(&entry.path)) {
+                        self.status_message = Some(format!("Unstage failed: {}", e));
+                        self.refresh_files();
+                        return;
+                    }
                     if let Err(e) = self.repo.unstage_file(&entry.path) {
                         self.status_message = Some(format!("Unstage failed: {}", e));
+                        self.undo.discard_last();
                     }
                     self.refresh_files();
                 }
@@ -417,29 +434,24 @@ impl App {
                         let old_content = self.repo.index_content(&entry.path)
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
-                        let new_content = self.repo.workdir_content(&entry.path)
-                            .ok()
-                            .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
-                        if let (Some(old), Some(new)) = (old_content, new_content) {
-                            if let Err(e) = self.repo.stage_hunk(&entry.path, &old, &new, hunk) {
+                        if let Some(old) = old_content {
+                            if let Err(e) = self.undo.record(&self.repo, "stage hunk", std::slice::from_ref(&entry.path)) {
                                 self.status_message = Some(format!("Stage hunk failed: {}", e));
+                                self.save_scroll_position();
+                                self.refresh_files();
+                                self.restore_hunk_position(hunk_idx);
+                                return;
+                            }
+                            if let Err(e) = self.repo.stage_hunk(&entry.path, &old, hunk) {
+                                self.status_message = Some(format!("Stage hunk failed: {}", e));
+                                self.undo.discard_last();
                             }
                             // Persist current scroll so the post-refresh reload
                             // can restore the user's reading position instead
                             // of jumping back to the previously saved value.
                             self.save_scroll_position();
                             self.refresh_files();
-                            if !self.show_full_file && !self.hunk_line_starts.is_empty() {
-                                // Hunks-only: jump to a nearby remaining hunk so
-                                // the user can keep staging. In full-file mode,
-                                // hunk indices include fillers, so clamping by
-                                // index would land on context — leave the scroll
-                                // alone and let update_hunk_from_scroll pick the
-                                // active hunk.
-                                let clamped = hunk_idx.min(self.hunk_line_starts.len() - 1);
-                                self.current_hunk_index = Some(clamped);
-                                self.diff_scroll = self.hunk_line_starts[clamped];
-                            }
+                            self.restore_hunk_position(hunk_idx);
                         }
                     }
                 }
@@ -459,16 +471,20 @@ impl App {
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
                         if let Some(idx_content) = index_content {
+                            if let Err(e) = self.undo.record(&self.repo, "unstage hunk", std::slice::from_ref(&entry.path)) {
+                                self.status_message = Some(format!("Unstage hunk failed: {}", e));
+                                self.save_scroll_position();
+                                self.refresh_files();
+                                self.restore_hunk_position(hunk_idx);
+                                return;
+                            }
                             if let Err(e) = self.repo.unstage_hunk(&entry.path, &idx_content, hunk) {
                                 self.status_message = Some(format!("Unstage hunk failed: {}", e));
+                                self.undo.discard_last();
                             }
                             self.save_scroll_position();
                             self.refresh_files();
-                            if !self.show_full_file && !self.hunk_line_starts.is_empty() {
-                                let clamped = hunk_idx.min(self.hunk_line_starts.len() - 1);
-                                self.current_hunk_index = Some(clamped);
-                                self.diff_scroll = self.hunk_line_starts[clamped];
-                            }
+                            self.restore_hunk_position(hunk_idx);
                         }
                     }
                 }
@@ -483,8 +499,14 @@ impl App {
                         // Confirmed — execute discard
                         self.pending_discard = None;
                         self.status_message = None;
+                        if let Err(e) = self.undo.record(&self.repo, "discard file", std::slice::from_ref(&entry.path)) {
+                            self.status_message = Some(format!("Discard failed: {}", e));
+                            self.refresh_files();
+                            return;
+                        }
                         if let Err(e) = self.repo.discard_file(&entry.path) {
                             self.status_message = Some(format!("Discard failed: {}", e));
+                            self.undo.discard_last();
                         }
                         self.refresh_files();
                     } else {
@@ -522,16 +544,20 @@ impl App {
                                     .ok()
                                     .and_then(|c| match c { ContentResult::Text(s) => Some(s), _ => None });
                                 if let Some(wc) = workdir_content {
+                                    if let Err(e) = self.undo.record(&self.repo, "discard hunk", std::slice::from_ref(&entry.path)) {
+                                        self.status_message = Some(format!("Discard hunk failed: {}", e));
+                                        self.save_scroll_position();
+                                        self.refresh_files();
+                                        self.restore_hunk_position(hunk_idx);
+                                        return;
+                                    }
                                     if let Err(e) = self.repo.discard_hunk(&entry.path, &wc, hunk) {
                                         self.status_message = Some(format!("Discard hunk failed: {}", e));
+                                        self.undo.discard_last();
                                     }
                                     self.save_scroll_position();
                                     self.refresh_files();
-                                    if !self.show_full_file && !self.hunk_line_starts.is_empty() {
-                                        let clamped = hunk_idx.min(self.hunk_line_starts.len() - 1);
-                                        self.current_hunk_index = Some(clamped);
-                                        self.diff_scroll = self.hunk_line_starts[clamped];
-                                    }
+                                    self.restore_hunk_position(hunk_idx);
                                 }
                             }
                         }
@@ -561,6 +587,34 @@ impl App {
             Message::ToggleFullFile => {
                 self.status_message = None;
                 self.toggle_full_file();
+            }
+            Message::Undo => {
+                match self.undo.undo(&self.repo) {
+                    UndoOutcome::Done(label) => {
+                        self.status_message = Some(format!("Undid: {}", label));
+                        self.refresh_files();
+                    }
+                    UndoOutcome::Empty => {
+                        self.status_message = Some("Nothing to undo".to_string());
+                    }
+                    UndoOutcome::Failed(e) => {
+                        self.status_message = Some(format!("Undo failed: {}", e));
+                    }
+                }
+            }
+            Message::Redo => {
+                match self.undo.redo(&self.repo) {
+                    UndoOutcome::Done(label) => {
+                        self.status_message = Some(format!("Redid: {}", label));
+                        self.refresh_files();
+                    }
+                    UndoOutcome::Empty => {
+                        self.status_message = Some("Nothing to redo".to_string());
+                    }
+                    UndoOutcome::Failed(e) => {
+                        self.status_message = Some(format!("Redo failed: {}", e));
+                    }
+                }
             }
         }
     }
@@ -645,6 +699,15 @@ impl App {
     pub fn refresh_files(&mut self) {
         self.refresh_file_list();
         self.load_diff_for_selected();
+    }
+
+    /// Clamp current_hunk_index and restore diff_scroll after a hunk mutation.
+    fn restore_hunk_position(&mut self, hunk_idx: usize) {
+        if !self.show_full_file && !self.hunk_line_starts.is_empty() {
+            let clamped = hunk_idx.min(self.hunk_line_starts.len() - 1);
+            self.current_hunk_index = Some(clamped);
+            self.diff_scroll = self.hunk_line_starts[clamped];
+        }
     }
 
     fn update_hunk_from_scroll(&mut self) {
@@ -904,6 +967,7 @@ mod tests {
             pending_discard: None,
             show_full_file: false,
             diff_viewport_height: Cell::new(0),
+            undo: UndoManager::new(),
         }
     }
 

@@ -3,6 +3,7 @@ mod diff;
 mod git;
 mod syntax;
 mod ui;
+mod undo;
 
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -149,6 +150,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Enter => Some(Message::SelectFile),
                                 KeyCode::Char('h') => Some(Message::SelectSidebar),
                                 KeyCode::Char('l') => Some(Message::SelectFile),
+                                KeyCode::Char('z') => Some(Message::Undo),
+                                KeyCode::Char('Z') => Some(Message::Redo),
                                 KeyCode::Tab => Some(Message::SwitchFocus),
                                 _ => None,
                             },
@@ -174,6 +177,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('r') => Some(Message::ReloadDiff),
                                 KeyCode::Char('h') => Some(Message::SelectSidebar),
                                 KeyCode::Char('l') => Some(Message::SelectFile),
+                                KeyCode::Char('z') => Some(Message::Undo),
+                                KeyCode::Char('Z') => Some(Message::Redo),
                                 KeyCode::Tab => Some(Message::SwitchFocus),
                                 KeyCode::Esc => Some(Message::SwitchFocus),
                                 _ => None,
