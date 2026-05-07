@@ -1,6 +1,7 @@
 use std::cell::Cell;
 use std::collections::HashMap;
 
+use crate::classify::{classify_diff, language_for_extension};
 use crate::diff::types::{ChangeKind, DiffContent, DiffHunk};
 use crate::diff::{binary_diff_content, compute_diff_content, compute_full_diff_content};
 use crate::git::GitRepo;
@@ -35,6 +36,7 @@ pub enum PendingDiscard {
     File { path: String },
     Hunk { path: String, hunk_index: usize },
 }
+
 
 #[derive(Debug, Clone)]
 pub struct CommentContext {
@@ -89,6 +91,7 @@ pub enum Message {
     ExtendSelectionDown,
     StageSelectedLines,
     UnstageSelectedLines,
+    ToggleSemanticFilter,
 }
 
 pub struct App {
@@ -120,6 +123,8 @@ pub struct App {
     pub visual_cursor: usize,
     pub visual_anchor: usize,
     pub visual_from_mouse: bool,
+    pub semantic_filter: bool,
+    pub formatting_only_cache: HashMap<(String, SidebarSection), bool>,
 }
 
 impl App {
@@ -163,6 +168,8 @@ impl App {
             visual_cursor: 0,
             visual_anchor: 0,
             visual_from_mouse: false,
+            semantic_filter: false,
+            formatting_only_cache: HashMap::new(),
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -281,6 +288,21 @@ impl App {
         } else {
             compute_diff_content(path, old_text, new_text)
         });
+
+        // Classify diff lines as formatting-only or semantic (Task 4)
+        if let Some(dc) = &mut self.diff_content {
+            let old_str = old_text.unwrap_or("");
+            let new_str = new_text.unwrap_or("");
+            let ext = std::path::Path::new(&dc.path)
+                .extension()
+                .and_then(|e| e.to_str());
+            let lang = ext.and_then(language_for_extension);
+            classify_diff(&mut dc.hunks, old_str, new_str, lang);
+
+            // Cache whether this file has only formatting changes (Task 10)
+            let all_formatting = dc.hunks.iter().all(|h| h.is_formatting_only());
+            self.formatting_only_cache.insert((dc.path.clone(), self.sidebar_section), all_formatting);
+        }
 
         if let Some(dc) = &self.diff_content {
             self.styled_diff = build_styled_diff(dc, old_text, new_text);
@@ -924,6 +946,9 @@ impl App {
                     }
                 }
             }
+            Message::ToggleSemanticFilter => {
+                self.semantic_filter = !self.semantic_filter;
+            }
         }
     }
 
@@ -958,6 +983,7 @@ impl App {
     }
 
     fn refresh_file_list(&mut self) {
+        self.formatting_only_cache.clear();
         if let Ok(all_files) = self.repo.changed_files() {
             let selected_path = self.selected_entry().map(|e| e.path.clone());
             let old_section = self.sidebar_section;
@@ -1056,14 +1082,34 @@ impl App {
         self.update_hunk_from_cursor();
     }
 
+    /// Return (visible, total, hidden) hunk counts.
+    /// When `semantic_filter` is false, all hunks are visible.
+    pub fn hunk_counts(&self) -> Option<(usize, usize, usize)> {
+        let dc = self.diff_content.as_ref()?;
+        if dc.is_binary || dc.hunks.is_empty() {
+            return None;
+        }
+        let total = dc.hunks.len();
+        if self.semantic_filter {
+            let hidden = dc.hunks.iter().filter(|h| h.is_formatting_only()).count();
+            Some((total - hidden, total, hidden))
+        } else {
+            Some((total, total, 0))
+        }
+    }
+
     /// Return (hunk_index, start_row) for change hunks only — filler hunks
     /// without headers are skipped. Used for `n`/`N` navigation.
+    /// When `semantic_filter` is true, pure-formatting hunks are also skipped.
     fn change_hunk_starts(&self) -> Vec<(usize, u16)> {
         let Some(dc) = self.diff_content.as_ref() else { return Vec::new() };
         if dc.is_binary { return Vec::new(); }
         let mut result = Vec::new();
         let mut row: u16 = 0;
         for (i, h) in dc.hunks.iter().enumerate() {
+            if self.semantic_filter && h.is_formatting_only() {
+                continue;
+            }
             if h.has_header {
                 result.push((i, row));
             }
@@ -1349,6 +1395,8 @@ mod tests {
             visual_cursor: 0,
             visual_anchor: 0,
             visual_from_mouse: false,
+            semantic_filter: false,
+            formatting_only_cache: HashMap::new(),
         }
     }
 
@@ -1773,7 +1821,7 @@ mod tests {
     }
 
     fn dl(kind: ChangeKind, old: Option<u32>, new: Option<u32>) -> DiffLine {
-        DiffLine { kind, old_lineno: old, new_lineno: new, content: "x\n".to_string() }
+        DiffLine { kind, old_lineno: old, new_lineno: new, content: "x\n".to_string(), formatting_only: false }
     }
 
     #[test]
@@ -2422,5 +2470,271 @@ mod tests {
         app.update(Message::ExtendSelectionUp);
         assert_eq!(app.visual_cursor, 2);
         assert!(app.visual_selection.is_empty());
+    }
+
+    // ---- semantic filter tests (Task 6) ----
+
+    #[test]
+    fn test_semantic_filter_defaults_to_false() {
+        let app = test_app_with_files(vec![]);
+        assert!(!app.semantic_filter);
+    }
+
+    #[test]
+    fn test_toggle_semantic_filter_flips_state() {
+        let mut app = test_app_with_files(vec![]);
+        assert!(!app.semantic_filter);
+        app.update(Message::ToggleSemanticFilter);
+        assert!(app.semantic_filter);
+        app.update(Message::ToggleSemanticFilter);
+        assert!(!app.semantic_filter);
+    }
+
+    #[test]
+    fn test_toggle_semantic_filter_available_in_sidebar() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::Sidebar;
+        app.update(Message::ToggleSemanticFilter);
+        assert!(app.semantic_filter);
+    }
+
+    #[test]
+    fn test_toggle_semantic_filter_available_in_diff_view() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.update(Message::ToggleSemanticFilter);
+        assert!(app.semantic_filter);
+    }
+
+    // ---- semantic filter navigation tests (Task 7) ----
+
+    fn dl_fmt(kind: ChangeKind, old: Option<u32>, new: Option<u32>, formatting_only: bool) -> DiffLine {
+        DiffLine { kind, old_lineno: old, new_lineno: new, content: "x\n".to_string(), formatting_only }
+    }
+
+    #[test]
+    fn test_change_hunk_starts_skips_formatting_hunks_when_filter_on() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.diff_content = Some(make_dc(vec![
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true },
+            DiffHunk { old_start: 10, new_start: 10, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(10), true)], has_header: true },
+        ]));
+
+        // Filter off: all 3 hunks visible
+        app.semantic_filter = false;
+        let starts_off = app.change_hunk_starts();
+        assert_eq!(starts_off.len(), 3);
+
+        // Filter on: only the semantic hunk (index 1) visible
+        app.semantic_filter = true;
+        let starts_on = app.change_hunk_starts();
+        assert_eq!(starts_on.len(), 1);
+        assert_eq!(starts_on[0].0, 1);
+    }
+
+    #[test]
+    fn test_next_hunk_skips_formatting_hunks_when_filter_on() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.diff_content = Some(make_dc(vec![
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true); 2], has_header: true },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false); 3], has_header: true },
+        ]));
+        app.semantic_filter = true;
+        app.diff_scroll = 0;
+
+        // Next hunk should skip the formatting hunk and go to the semantic one.
+        // The formatting hunk is hidden (0 rows), so the semantic hunk starts at row 0.
+        app.update(Message::NextHunk);
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    #[test]
+    fn test_prev_hunk_skips_formatting_hunks_when_filter_on() {
+        let mut app = test_app_with_files(vec![]);
+        app.focus = Focus::DiffView;
+        app.diff_content = Some(make_dc(vec![
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Delete, Some(1), None, false); 3], has_header: true },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(5), true); 2], has_header: true },
+        ]));
+        app.semantic_filter = true;
+        app.diff_scroll = 4; // past the second hunk
+
+        // Prev hunk should skip the formatting hunk and go to the semantic one
+        app.update(Message::PrevHunk);
+        assert_eq!(app.diff_scroll, 0);
+    }
+
+    // ── hunk_counts tests (Task 8) ──────────────────────────────────
+
+    #[test]
+    fn test_hunk_counts_none_when_no_diff_content() {
+        let app = test_app_with_files(vec![]);
+        assert!(app.hunk_counts().is_none());
+    }
+
+    #[test]
+    fn test_hunk_counts_none_when_binary() {
+        let mut app = test_app_with_files(vec![]);
+        app.diff_content = Some(DiffContent {
+            path: "img.png".to_string(),
+            hunks: vec![],
+            is_binary: true,
+        });
+        assert!(app.hunk_counts().is_none());
+    }
+
+    #[test]
+    fn test_hunk_counts_none_when_empty_hunks() {
+        let mut app = test_app_with_files(vec![]);
+        app.diff_content = Some(DiffContent {
+            path: "t.rs".to_string(),
+            hunks: vec![],
+            is_binary: false,
+        });
+        assert!(app.hunk_counts().is_none());
+    }
+
+    #[test]
+    fn test_hunk_counts_all_visible_when_filter_off() {
+        let mut app = test_app_with_files(vec![]);
+        app.diff_content = Some(make_dc(vec![
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true },
+        ]));
+        app.semantic_filter = false;
+        assert_eq!(app.hunk_counts(), Some((2, 2, 0)));
+    }
+
+    #[test]
+    fn test_hunk_counts_hides_formatting_when_filter_on() {
+        let mut app = test_app_with_files(vec![]);
+        app.diff_content = Some(make_dc(vec![
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true },
+            DiffHunk { old_start: 10, new_start: 10, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(10), true)], has_header: true },
+        ]));
+        app.semantic_filter = true;
+        assert_eq!(app.hunk_counts(), Some((1, 3, 2)));
+    }
+
+    #[test]
+    fn test_hunk_counts_all_formatting_hidden() {
+        let mut app = test_app_with_files(vec![]);
+        app.diff_content = Some(make_dc(vec![
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, true)], has_header: true },
+        ]));
+        app.semantic_filter = true;
+        assert_eq!(app.hunk_counts(), Some((0, 2, 2)));
+    }
+
+    // ── Task 4: classify_diff wired into load_diff_for_selected ──────
+
+    #[test]
+    fn test_classify_diff_integration_whitespace_change_marked_formatting() {
+        // Simulates what load_diff_for_selected does: compute diff, then classify.
+        // A whitespace-only change should have formatting_only = true after classification.
+        let old = "fn foo() {\nlet x=1;\n}\n";
+        let new = "fn foo() {\n    let x = 1;\n}\n";
+        let mut dc = crate::diff::compute_diff_content("t.rs", Some(old), Some(new));
+
+        let lang = crate::classify::language_for_extension("rs");
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+
+        let changed: Vec<_> = dc.hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).collect();
+        assert!(
+            !changed.is_empty(),
+            "diff should have changed lines"
+        );
+        assert!(
+            changed.iter().all(|l| l.formatting_only),
+            "whitespace-only changes should be formatting_only after classification: {:?}",
+            changed.iter().map(|l| (&l.content, l.formatting_only)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_classify_diff_integration_semantic_change_not_formatting() {
+        let old = "let x = 1;\n";
+        let new = "let y = 1;\n";
+        let mut dc = crate::diff::compute_diff_content("t.rs", Some(old), Some(new));
+
+        let lang = crate::classify::language_for_extension("rs");
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+
+        let changed: Vec<_> = dc.hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).collect();
+        assert!(
+            changed.iter().all(|l| !l.formatting_only),
+            "semantic changes should NOT be formatting_only after classification"
+        );
+    }
+
+    #[test]
+    fn test_classify_diff_integration_unknown_extension_skips() {
+        let old = "hello world\n";
+        let new = "hello  world\n";
+        let mut dc = crate::diff::compute_diff_content("README.txt", Some(old), Some(new));
+
+        let lang = crate::classify::language_for_extension("txt");
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+
+        // Unknown language: all lines should remain non-formatting
+        let changed: Vec<_> = dc.hunks.iter().flat_map(|h| h.lines.iter()).filter(|l| l.kind != ChangeKind::Equal).collect();
+        assert!(
+            changed.iter().all(|l| !l.formatting_only),
+            "unknown language should leave all lines as non-formatting"
+        );
+    }
+
+    // ---- sidebar formatting indicator tests (Task 10) ----
+
+    #[test]
+    fn test_formatting_only_cache_populated_for_formatting_changes() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        // Simulate loading a diff with only formatting changes
+        let old = "fn foo() {\nlet x=1;\n}\n";
+        let new = "fn foo() {\n    let x = 1;\n}\n";
+        let mut dc = crate::diff::compute_diff_content("unstaged.rs", Some(old), Some(new));
+        let lang = crate::classify::language_for_extension("rs");
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+        app.diff_content = Some(dc);
+
+        // After classification, all hunks should be formatting-only
+        let all_formatting = app.diff_content.as_ref().unwrap().hunks.iter().all(|h| h.is_formatting_only());
+        assert!(all_formatting, "whitespace-only changes should be formatting-only");
+
+        // Manually populate the cache as load_diff_for_selected would
+        app.formatting_only_cache.insert(("unstaged.rs".to_string(), SidebarSection::Unstaged), all_formatting);
+        assert_eq!(app.formatting_only_cache.get(&("unstaged.rs".to_string(), SidebarSection::Unstaged)), Some(&true));
+    }
+
+    #[test]
+    fn test_formatting_only_cache_populated_for_semantic_changes() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let old = "let x = 1;\n";
+        let new = "let y = 2;\n";
+        let mut dc = crate::diff::compute_diff_content("unstaged.rs", Some(old), Some(new));
+        let lang = crate::classify::language_for_extension("rs");
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+        app.diff_content = Some(dc);
+
+        let all_formatting = app.diff_content.as_ref().unwrap().hunks.iter().all(|h| h.is_formatting_only());
+        assert!(!all_formatting, "semantic changes should NOT be formatting-only");
+
+        app.formatting_only_cache.insert(("unstaged.rs".to_string(), SidebarSection::Unstaged), all_formatting);
+        assert_eq!(app.formatting_only_cache.get(&("unstaged.rs".to_string(), SidebarSection::Unstaged)), Some(&false));
+    }
+
+    #[test]
+    fn test_formatting_only_cache_cleared_on_refresh() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.formatting_only_cache.insert(("unstaged.rs".to_string(), SidebarSection::Unstaged), true);
+        assert!(app.formatting_only_cache.contains_key(&("unstaged.rs".to_string(), SidebarSection::Unstaged)));
+
+        app.refresh_file_list();
+        assert!(!app.formatting_only_cache.contains_key(&("unstaged.rs".to_string(), SidebarSection::Unstaged)));
     }
 }

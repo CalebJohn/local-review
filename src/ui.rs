@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
@@ -104,6 +106,8 @@ fn render_sidebar(frame: &mut ratatui::Frame, app: &App, area: Rect) {
         } else {
             None
         },
+        &app.formatting_only_cache,
+        SidebarSection::Staged,
     );
 
     // Unstaged section
@@ -118,6 +122,8 @@ fn render_sidebar(frame: &mut ratatui::Frame, app: &App, area: Rect) {
         } else {
             None
         },
+        &app.formatting_only_cache,
+        SidebarSection::Unstaged,
     );
 }
 
@@ -128,14 +134,21 @@ fn render_file_list(
     area: Rect,
     focused: bool,
     selected: Option<usize>,
+    formatting_only_cache: &HashMap<(String, SidebarSection), bool>,
+    section: SidebarSection,
 ) {
     let items: Vec<ListItem> = files
         .iter()
         .map(|entry| {
             let status = entry.display_status();
+            let is_formatting_only = formatting_only_cache.get(&(entry.path.clone(), section)).copied().unwrap_or(false);
+            let mut style = status_style(entry);
+            if is_formatting_only {
+                style = style.add_modifier(Modifier::DIM);
+            }
             let line = Line::from(vec![
-                Span::styled(format!("{} ", status), status_style(entry)),
-                Span::raw(entry.path.clone()),
+                Span::styled(format!("{} ", status), style),
+                Span::styled(entry.path.clone(), style),
             ]);
             ListItem::new(line)
         })
@@ -198,10 +211,14 @@ fn diff_lines(
     visual_selection: &[usize],
     diff_cursor: usize,
     mode: &AppMode,
+    semantic_filter: bool,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut global_line_idx: usize = 0;
     for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
+        if semantic_filter && hunk.is_formatting_only() {
+            continue;
+        }
         let in_hunk = hunk.has_header && current_hunk_index == Some(hunk_idx);
         if hunk.has_header {
             lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
@@ -252,7 +269,12 @@ fn diff_lines(
                 }
                 Line::from(parts)
             } else {
-                let body_span = Span::styled(format!("{}{}", prefix, content), content_style);
+                let body_style = if dl.formatting_only && dl.kind != ChangeKind::Equal {
+                    content_style.add_modifier(Modifier::DIM)
+                } else {
+                    content_style
+                };
+                let body_span = Span::styled(format!("{}{}", prefix, content), body_style);
                 Line::from(vec![gutter_span, lineno_span, body_span])
             };
 
@@ -316,6 +338,15 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
                 spans.extend([Span::styled(" S ", key_style), Span::styled(" stage file ", desc_style), sep.clone()]);
                 spans.extend([Span::styled(" d ", key_style), Span::styled(" discard hunk ", desc_style), sep.clone()]);
                 spans.extend([Span::styled(" D ", key_style), Span::styled(" discard file ", desc_style), sep.clone()]);
+            }
+            spans.extend([Span::styled(" w ", key_style), Span::styled(if app.semantic_filter { " show all " } else { " whitespace " }, desc_style), sep.clone()]);
+            if app.semantic_filter {
+                if let Some((visible, total, hidden)) = app.hunk_counts() {
+                    spans.extend([Span::styled(
+                        format!(" {}/{} ({} hidden) ", visible, total, hidden),
+                        Style::default().fg(Color::Cyan),
+                    ), sep.clone()]);
+                }
             }
             spans.extend([Span::styled(" c ", key_style), Span::styled(" comment ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" j/k ", key_style), Span::styled(" navigate ", desc_style), sep.clone()]);
@@ -382,11 +413,286 @@ fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
         Some(dc) => {
             let inner = block.inner(area);
             app.diff_viewport_height.set(inner.height);
-            let lines = diff_lines(dc, app.styled_diff.as_ref(), app.current_hunk_index, &app.visual_selection, app.diff_cursor, &app.mode);
-            let paragraph = Paragraph::new(lines)
+            let lines = diff_lines(dc, app.styled_diff.as_ref(), app.current_hunk_index, &app.visual_selection, app.diff_cursor, &app.mode, app.semantic_filter);
+            if lines.is_empty() && app.semantic_filter {
+                let paragraph = Paragraph::new(Line::from(Span::styled(
+                    "All changes are formatting-only",
+                    Style::default().fg(Color::DarkGray),
+                )))
                 .block(block)
-                .scroll((app.diff_scroll, 0));
-            frame.render_widget(paragraph, area);
+                .alignment(Alignment::Center);
+                frame.render_widget(paragraph, area);
+            } else {
+                let paragraph = Paragraph::new(lines)
+                    .block(block)
+                    .scroll((app.diff_scroll, 0));
+                frame.render_widget(paragraph, area);
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::diff::types::{DiffHunk, DiffLine};
+
+    fn dl(kind: ChangeKind, old: Option<u32>, new: Option<u32>, formatting_only: bool) -> DiffLine {
+        DiffLine { kind, old_lineno: old, new_lineno: new, content: "x\n".to_string(), formatting_only }
+    }
+
+    fn make_dc(hunks: Vec<DiffHunk>) -> DiffContent {
+        DiffContent { path: "t.rs".to_string(), hunks, is_binary: false }
+    }
+
+    #[test]
+    fn test_diff_lines_formatting_only_insert_is_dimmed() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Insert, None, Some(1), true),
+            ],
+            has_header: true,
+        }]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
+        // First line is the hunk header, second is the content line
+        assert_eq!(lines.len(), 2);
+        let content_line = &lines[1];
+        // The body span (index 2 after gutter and lineno) should have dim modifier
+        let body_span = content_line.spans.iter().find(|s| s.content.contains('+'));
+        assert!(body_span.is_some(), "body span with '+' prefix should exist");
+        let body_span = body_span.unwrap();
+        assert!(
+            body_span.style.add_modifier.contains(Modifier::DIM),
+            "formatting-only insert should have DIM modifier: {:?}",
+            body_span.style
+        );
+    }
+
+    #[test]
+    fn test_diff_lines_formatting_only_delete_is_dimmed() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Delete, Some(1), None, true),
+            ],
+            has_header: true,
+        }]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
+        assert_eq!(lines.len(), 2);
+        let content_line = &lines[1];
+        let body_span = content_line.spans.iter().find(|s| s.content.contains('-'));
+        assert!(body_span.is_some(), "body span with '-' prefix should exist");
+        let body_span = body_span.unwrap();
+        assert!(
+            body_span.style.add_modifier.contains(Modifier::DIM),
+            "formatting-only delete should have DIM modifier: {:?}",
+            body_span.style
+        );
+    }
+
+    #[test]
+    fn test_diff_lines_semantic_insert_is_not_dimmed() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Insert, None, Some(1), false),
+            ],
+            has_header: true,
+        }]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
+        assert_eq!(lines.len(), 2);
+        let content_line = &lines[1];
+        let body_span = content_line.spans.iter().find(|s| s.content.contains('+')).unwrap();
+        assert!(
+            !body_span.style.add_modifier.contains(Modifier::DIM),
+            "semantic insert should NOT have DIM modifier"
+        );
+    }
+
+    #[test]
+    fn test_diff_lines_semantic_delete_is_not_dimmed() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Delete, Some(1), None, false),
+            ],
+            has_header: true,
+        }]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
+        assert_eq!(lines.len(), 2);
+        let content_line = &lines[1];
+        let body_span = content_line.spans.iter().find(|s| s.content.contains('-')).unwrap();
+        assert!(
+            !body_span.style.add_modifier.contains(Modifier::DIM),
+            "semantic delete should NOT have DIM modifier"
+        );
+    }
+
+    #[test]
+    fn test_diff_lines_equal_line_never_dimmed() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Equal, Some(1), Some(1), false),
+            ],
+            has_header: true,
+        }]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
+        assert_eq!(lines.len(), 2);
+        let content_line = &lines[1];
+        let body_span = content_line.spans.iter().find(|s| s.content.contains(' ')).unwrap();
+        assert!(
+            !body_span.style.add_modifier.contains(Modifier::DIM),
+            "equal line should NOT have DIM modifier"
+        );
+    }
+
+    #[test]
+    fn test_diff_lines_mixed_hunk_only_semantic_dimmed() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Delete, Some(1), None, true),  // formatting
+                dl(ChangeKind::Insert, None, Some(1), true),  // formatting
+                dl(ChangeKind::Delete, Some(2), None, false), // semantic
+                dl(ChangeKind::Insert, None, Some(2), false), // semantic
+            ],
+            has_header: true,
+        }]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
+        assert_eq!(lines.len(), 5); // header + 4 content lines
+
+        // Line 1 (formatting delete): dimmed
+        let body_span = lines[1].spans.iter().find(|s| s.content.contains('-')).unwrap();
+        assert!(body_span.style.add_modifier.contains(Modifier::DIM));
+
+        // Line 2 (formatting insert): dimmed
+        let body_span = lines[2].spans.iter().find(|s| s.content.contains('+')).unwrap();
+        assert!(body_span.style.add_modifier.contains(Modifier::DIM));
+
+        // Line 3 (semantic delete): not dimmed
+        let body_span = lines[3].spans.iter().find(|s| s.content.contains('-')).unwrap();
+        assert!(!body_span.style.add_modifier.contains(Modifier::DIM));
+
+        // Line 4 (semantic insert): not dimmed
+        let body_span = lines[4].spans.iter().find(|s| s.content.contains('+')).unwrap();
+        assert!(!body_span.style.add_modifier.contains(Modifier::DIM));
+    }
+
+    // ── Semantic filter: hide pure-formatting hunks ─────────────────
+
+    #[test]
+    fn test_diff_lines_semantic_filter_hides_pure_formatting_hunk() {
+        let dc = make_dc(vec![
+            DiffHunk {
+                old_start: 1,
+                new_start: 1,
+                lines: vec![
+                    dl(ChangeKind::Insert, None, Some(1), true),
+                ],
+                has_header: true,
+            },
+        ]);
+        // With filter off: hunk renders (header + content)
+        let lines_off = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
+        assert_eq!(lines_off.len(), 2);
+
+        // With filter on: pure-formatting hunk is hidden
+        let lines_on = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);
+        assert_eq!(lines_on.len(), 0);
+    }
+
+    #[test]
+    fn test_diff_lines_semantic_filter_shows_mixed_hunk() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Delete, Some(1), None, true),  // formatting
+                dl(ChangeKind::Insert, None, Some(1), true),  // formatting
+                dl(ChangeKind::Delete, Some(2), None, false), // semantic
+                dl(ChangeKind::Insert, None, Some(2), false), // semantic
+            ],
+            has_header: true,
+        }]);
+        // Mixed hunk should still show with filter on
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);
+        assert_eq!(lines.len(), 5); // header + 4 content lines
+    }
+
+    #[test]
+    fn test_diff_lines_semantic_filter_shows_semantic_hunk() {
+        let dc = make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Delete, Some(1), None, false),
+                dl(ChangeKind::Insert, None, Some(1), false),
+            ],
+            has_header: true,
+        }]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);
+        assert_eq!(lines.len(), 3); // header + 2 content lines
+    }
+
+    #[test]
+    fn test_diff_lines_semantic_filter_mixed_hunks_hides_only_formatting() {
+        let dc = make_dc(vec![
+            DiffHunk {
+                old_start: 1,
+                new_start: 1,
+                lines: vec![
+                    dl(ChangeKind::Insert, None, Some(1), true),
+                ],
+                has_header: true,
+            },
+            DiffHunk {
+                old_start: 5,
+                new_start: 5,
+                lines: vec![
+                    dl(ChangeKind::Delete, Some(5), None, false),
+                    dl(ChangeKind::Insert, None, Some(5), false),
+                ],
+                has_header: true,
+            },
+            DiffHunk {
+                old_start: 10,
+                new_start: 10,
+                lines: vec![
+                    dl(ChangeKind::Insert, None, Some(10), true),
+                ],
+                has_header: true,
+            },
+        ]);
+        // With filter on: only the middle semantic hunk should render
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);
+        assert_eq!(lines.len(), 3); // header + 2 content lines from middle hunk only
+    }
+
+    #[test]
+    fn test_diff_lines_semantic_filter_all_formatting_returns_empty() {
+        let dc = make_dc(vec![
+            DiffHunk {
+                old_start: 1,
+                new_start: 1,
+                lines: vec![dl(ChangeKind::Insert, None, Some(1), true)],
+                has_header: true,
+            },
+            DiffHunk {
+                old_start: 5,
+                new_start: 5,
+                lines: vec![dl(ChangeKind::Delete, Some(5), None, true)],
+                has_header: true,
+            },
+        ]);
+        let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);
+        assert!(lines.is_empty(), "all formatting hunks should produce no lines");
     }
 }

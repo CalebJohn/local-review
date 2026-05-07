@@ -1,4 +1,5 @@
 mod app;
+mod classify;
 mod diff;
 mod git;
 mod syntax;
@@ -167,6 +168,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('z') => Some(Message::Undo),
                                 KeyCode::Char('Z') => Some(Message::Redo),
                                 KeyCode::Tab => Some(Message::SwitchFocus),
+                                KeyCode::Char('w') => Some(Message::ToggleSemanticFilter),
                                 _ => None,
                             },
                             Focus::DiffView => {
@@ -194,7 +196,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                         KeyCode::Char('D') => Some(Message::DiscardFile),
                                         KeyCode::Char('c') => Some(Message::StartComment),
                                         KeyCode::Char('v') => Some(Message::EnterVisual),
-                                        _ => translate_diff_common_key(key.code),
+                                        KeyCode::Char('w') => Some(Message::ToggleSemanticFilter),
+                                                _ => translate_diff_common_key(key.code),
                                     }
                                 }
                             }

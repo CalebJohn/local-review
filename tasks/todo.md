@@ -11,9 +11,9 @@
 - Update all `DiffLine` construction sites to include `formatting_only: false`
 
 **Accept when:**
-- [ ] `cargo build` compiles with no errors
-- [ ] `cargo test` — all existing tests pass unchanged (new field defaults to false)
-- [ ] Unit tests for `is_formatting_only()` and `is_mixed()` pass
+- [x] `cargo build` compiles with no errors
+- [x] `cargo test` — all existing tests pass unchanged (new field defaults to false)
+- [x] Unit tests for `is_formatting_only()` and `is_mixed()` pass
 
 **Verify:** `cargo test && cargo clippy`
 
@@ -28,10 +28,10 @@
 - Gate on `MAX_HIGHLIGHT_BYTES` (256KB)
 
 **Accept when:**
-- [ ] Parsing a Rust snippet produces correct tokens keyed by line number
-- [ ] Whitespace-only nodes (spaces, newlines) are excluded
-- [ ] Files exceeding 256KB return None / empty map
-- [ ] Unknown language returns None
+- [x] Parsing a Rust snippet produces correct tokens keyed by line number
+- [x] Whitespace-only nodes (spaces, newlines) are excluded
+- [x] Files exceeding 256KB return None / empty map
+- [x] Unknown language returns None
 
 **Verify:** `cargo test classify`
 
@@ -47,18 +47,18 @@
 - No grammar available -> return early, all lines remain semantic
 
 **Accept when:**
-- [ ] Whitespace-only change: classified as formatting
-- [ ] Line split (one line -> many, same tokens): formatting
-- [ ] Line join (many -> one): formatting
-- [ ] Trailing comma add/remove: formatting
-- [ ] Quote normalization (`'` to `"`): formatting
-- [ ] Variable rename: semantic
-- [ ] Added statement: semantic
-- [ ] Comment text change: semantic
-- [ ] Mixed group (formatting + semantic): entire group semantic (conservative)
-- [ ] No grammar: all lines remain semantic
-- [ ] Pure insertion/deletion: semantic
-- [ ] Large file (>256KB): skips classification
+- [x] Whitespace-only change: classified as formatting
+- [x] Line split (one line -> many, same tokens): formatting
+- [x] Line join (many -> one): formatting
+- [x] Trailing comma add/remove: formatting
+- [x] Quote normalization (`'` to `"`): formatting
+- [x] Variable rename: semantic
+- [x] Added statement: semantic
+- [x] Comment text change: semantic
+- [x] Mixed group (formatting + semantic): entire group semantic (conservative)
+- [x] No grammar: all lines remain semantic
+- [x] Pure insertion/deletion: semantic
+- [x] Large file (>256KB): skips classification
 
 **Verify:** `cargo test classify`
 
@@ -74,9 +74,9 @@
 - Pass the file extension derived from the path
 
 **Accept when:**
-- [ ] `cargo build` compiles
-- [ ] Running the app on a repo with formatting changes: `DiffLine::formatting_only` is correctly set (verify via debug logging or test)
-- [ ] No visible UI change yet (dimming is next task)
+- [x] `cargo build` compiles
+- [x] Running the app on a repo with formatting changes: `DiffLine::formatting_only` is correctly set (verify via debug logging or test)
+- [x] No visible UI change yet (dimming is next task)
 
 **Verify:** `cargo test && cargo run` (in a test repo with formatting changes)
 
@@ -89,10 +89,10 @@
 - Equal lines are never dimmed (they aren't changes)
 
 **Accept when:**
-- [ ] Formatting-only Insert lines render as dimmed green
-- [ ] Formatting-only Delete lines render as dimmed red
-- [ ] Semantic lines render normally (no change)
-- [ ] Equal lines unaffected
+- [x] Formatting-only Insert lines render as dimmed green
+- [x] Formatting-only Delete lines render as dimmed red
+- [x] Semantic lines render normally (no change)
+- [x] Equal lines unaffected
 
 **Verify:** `cargo run` — visual inspection with a repo containing formatting changes
 
@@ -109,9 +109,9 @@
 - Bind `W` key to `StageFormattingHunks` in `main.rs` (both focus modes)
 
 **Accept when:**
-- [ ] Pressing `w` toggles `semantic_filter` state
-- [ ] Message variants compile and dispatch correctly
-- [ ] No behavior change yet (hiding and bulk staging are separate tasks)
+- [x] Pressing `w` toggles `semantic_filter` state
+- [x] Message variants compile and dispatch correctly
+- [x] No behavior change yet (hiding and bulk staging are separate tasks)
 
 **Verify:** `cargo build && cargo test`
 
@@ -126,11 +126,11 @@
 - Add visible hunk index tracking: compute `visible_hunks` and `hidden_count` for footer
 
 **Accept when:**
-- [ ] With `semantic_filter = true`, pure-formatting hunks disappear from diff view
-- [ ] Mixed hunks still show (with formatting lines dimmed)
-- [ ] `n`/`N` navigation skips hidden hunks
-- [ ] File with all formatting hunks shows the "All changes are formatting-only" message
-- [ ] Toggling off restores all hunks
+- [x] With `semantic_filter = true`, pure-formatting hunks disappear from diff view
+- [x] Mixed hunks still show (with formatting lines dimmed)
+- [x] `n`/`N` navigation skips hidden hunks
+- [x] File with all formatting hunks shows the "All changes are formatting-only" message
+- [x] Toggling off restores all hunks
 
 **Verify:** `cargo run` — manual test with formatting-heavy repo
 
@@ -144,9 +144,9 @@
 - Add `w` key hint to footer for both Sidebar and DiffView modes
 
 **Accept when:**
-- [ ] Footer shows `w` keybinding hint
-- [ ] When filter is active, footer shows visible/hidden hunk counts
-- [ ] When filter is inactive, footer is unchanged from current behavior
+- [x] Footer shows `w` keybinding hint
+- [x] When filter is active, footer shows visible/hidden hunk counts
+- [x] When filter is inactive, footer is unchanged from current behavior
 
 **Verify:** `cargo run` — visual inspection
 
@@ -166,12 +166,12 @@
 - Skip mixed hunks entirely
 
 **Accept when:**
-- [ ] `W` stages all pure-formatting hunks across all unstaged files
-- [ ] Mixed hunks are not staged
-- [ ] File list updates correctly after staging
-- [ ] Files that become fully staged move to the staged section
-- [ ] Single undo restores the entire batch
-- [ ] Footer shows confirmation message
+- [x] `W` stages all pure-formatting hunks across all unstaged files
+- [x] Mixed hunks are not staged
+- [x] File list updates correctly after staging
+- [x] Files that become fully staged move to the staged section
+- [x] Single undo restores the entire batch
+- [x] Footer shows confirmation message
 
 **Verify:** `cargo test` (undo test), `cargo run` — manual test staging formatting hunks then undoing
 
@@ -184,8 +184,8 @@
 - This requires classification data to be available for sidebar rendering (may need to cache classification results per file)
 
 **Accept when:**
-- [ ] Files with only formatting changes render with dimmed filename in sidebar
-- [ ] Files with semantic or mixed changes render normally
+- [x] Files with only formatting changes render with dimmed filename in sidebar
+- [x] Files with semantic or mixed changes render normally
 
 **Verify:** `cargo run` — visual inspection
 

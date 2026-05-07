@@ -564,10 +564,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -580,9 +580,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -595,9 +595,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -610,10 +610,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
             has_header: true,
         };
@@ -626,10 +626,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(1), content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(1), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
             has_header: true,
         };
@@ -643,11 +643,11 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 3, new_start: 3,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "3\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(4), new_lineno: None,    content: "4\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(3), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(4), content: "Y\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "3\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(4), new_lineno: None,    content: "4\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(3), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(4), content: "Y\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
             ],
             has_header: true,
         };
@@ -667,10 +667,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 6, new_start: 5,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(6), new_lineno: Some(5), content: "f\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(7), new_lineno: None,    content: "g\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(6), content: "G\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(8), new_lineno: Some(7), content: "h\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(6), new_lineno: Some(5), content: "f\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(7), new_lineno: None,    content: "g\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(6), content: "G\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(8), new_lineno: Some(7), content: "h\n".into() },
             ],
             has_header: true,
         };
@@ -686,8 +686,8 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
         };
@@ -700,8 +700,8 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
         };
@@ -755,9 +755,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
         };
@@ -770,9 +770,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -785,9 +785,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -800,11 +800,11 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 3, new_start: 3,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "3\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(4), new_lineno: None,    content: "4\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(3), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(4), content: "Y\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "3\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(4), new_lineno: None,    content: "4\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(3), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(4), content: "Y\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
             ],
             has_header: true,
         };
@@ -841,8 +841,8 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
         };
@@ -855,8 +855,8 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
         };
@@ -882,10 +882,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -898,10 +898,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -916,10 +916,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -932,10 +932,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
         };
@@ -948,10 +948,10 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(1), content: "b\n".into() },
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(1), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
             has_header: true,
         };
@@ -964,9 +964,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
         };
@@ -978,9 +978,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
         };
@@ -995,9 +995,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
         };
@@ -1010,9 +1010,9 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
-                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
         };
@@ -1024,8 +1024,8 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
         };
@@ -1039,8 +1039,8 @@ mod tests {
         let hunk = DiffHunk {
             old_start: 1, new_start: 1,
             lines: vec![
-                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
-                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
         };

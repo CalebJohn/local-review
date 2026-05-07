@@ -54,6 +54,7 @@ pub fn compute_hunks(old: &str, new: &str, context_lines: usize) -> Vec<DiffHunk
                     old_lineno,
                     new_lineno,
                     content,
+                    formatting_only: false,
                 });
             }
         }
@@ -133,6 +134,7 @@ pub fn compute_full_hunks(old: &str, new: &str) -> Vec<DiffHunk> {
                         old_lineno: Some(old_lno),
                         new_lineno: Some(new_lno),
                         content,
+                        formatting_only: false,
                     }
                 })
                 .collect();
