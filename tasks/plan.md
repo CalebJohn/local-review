@@ -32,58 +32,58 @@ app.rs (App struct, Message enum, update logic)
 
 ### Phase 1: Foundation — Git layer with line-filtered apply
 
-- [ ] Task 1: Add line-filtered apply functions in git/mod.rs
-- [ ] Task 2: Add line-filtered unstage functions in git/mod.rs
-- [ ] Task 3: Unit tests for line-filtered apply/unstage
+- [x] Task 1: Add line-filtered apply functions in git/mod.rs
+- [x] Task 2: Add line-filtered unstage functions in git/mod.rs
+- [x] Task 3: Unit tests for line-filtered apply/unstage
 
 ### Checkpoint: Foundation
-- [ ] `cargo test` passes — git module tests green
-- [ ] New functions handle: empty selection, all lines selected, non-contiguous selection
+- [x] `cargo test` passes — git module tests green
+- [x] New functions handle: empty selection, all lines selected, non-contiguous selection
 
 ### Phase 2: App State — Mode state, selection state, Messages
 
-- [ ] Task 4: Add `AppMode` enum and visual selection state to `App`
-- [ ] Task 5: Add `EnterVisual`, `ExtendSelection`, `ExitVisual` Messages
-- [ ] Task 6: Implement `update()` handlers for visual mode transitions
+- [x] Task 4: Add `AppMode` enum and visual selection state to `App`
+- [x] Task 5: Add `EnterVisual`, `ExtendSelection`, `ExitVisual` Messages
+- [x] Task 6: Implement `update()` handlers for visual mode transitions
 
 ### Checkpoint: App State
-- [ ] `cargo test` passes — app module tests green
-- [ ] Mode transitions work: Normal→Visual (v), Visual→Normal (Esc)
+- [x] `cargo test` passes — app module tests green
+- [x] Mode transitions work: Normal→Visual (v), Visual→Normal (Esc)
 
 ### Phase 3: UI — Selection rendering and footer hints
 
-- [ ] Task 7: Add visual mode indicator to footer in ui.rs
-- [ ] Task 8: Add cyan selection highlighting to diff line gutter
+- [x] Task 7: Add visual mode indicator to footer in ui.rs
+- [x] Task 8: Add cyan selection highlighting to diff line gutter
 
 ### Checkpoint: UI
-- [ ] Visual mode shows `[VISUAL]` indicator in footer
-- [ ] Selected lines have cyan gutter indicator
+- [x] Visual mode shows `[VISUAL]` indicator in footer
+- [x] Selected lines have cyan gutter indicator
 
 ### Phase 4: Line Stage/Unstage — The complete feature path
 
-- [ ] Task 9: Implement `StageSelectedLines` message and handler
-- [ ] Task 10: Implement `UnstageSelectedLines` message and handler
-- [ ] Task 11: Add `c` keybinding for comment on selected lines (clipboard integration)
+- [x] Task 9: Implement `StageSelectedLines` message and handler
+- [x] Task 10: Implement `UnstageSelectedLines` message and handler
+- [x] Task 11: Add `c` keybinding for comment on selected lines (clipboard integration)
 
 ### Checkpoint: Feature Complete
-- [ ] `v` enters visual mode from Normal mode in diff view
-- [ ] `j/k` extends/shrinks line selection
-- [ ] `s` stages only selected +/- lines (error if none selected)
-- [ ] `u` unstages only selected +/- lines (error if none selected)
-- [ ] `Esc` exits visual mode, clears selection, returns to Normal
-- [ ] Selection cleared after stage/unstage
-- [ ] Existing hunk-level `s`/`u` bindings continue to work
-- [ ] Visual mode shown in footer when active
-- [ ] `c` in visual mode comments on selected lines
+- [x] `v` enters visual mode from Normal mode in diff view
+- [x] `j/k` extends/shrinks line selection
+- [x] `s` stages only selected +/- lines (error if none selected)
+- [x] `u` unstages only selected +/- lines (error if none selected)
+- [x] `Esc` exits visual mode, clears selection, returns to Normal
+- [x] Selection cleared after stage/unstage
+- [x] Existing hunk-level `s`/`u` bindings continue to work
+- [x] Visual mode shown in footer when active
+- [x] `c` in visual mode comments on selected lines
 
 ### Phase 5: Integration & Polish
 
-- [ ] Task 12: End-to-end test: stage partial hunk and verify index content
-- [ ] Task 13: Verify all existing tests still pass
+- [x] Task 12: End-to-end test: stage partial hunk and verify index content
+- [x] Task 13: Verify all existing tests still pass
 
 ### Checkpoint: Complete
-- [ ] All acceptance criteria from SPEC.md met
-- [ ] Ready for human review
+- [x] All acceptance criteria from SPEC.md met
+- [x] Ready for human review
 
 ## Risks and Mitigations
 

@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use app::{App, Focus, Message};
+use app::{App, AppMode, Focus, Message};
 use notify::Watcher;
 
 enum WatchEvent {
@@ -169,35 +169,35 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Tab => Some(Message::SwitchFocus),
                                 _ => None,
                             },
-                            Focus::DiffView => match key.code {
-                                KeyCode::Char('q') => Some(Message::Quit),
-                                KeyCode::Char('j') | KeyCode::Down => Some(Message::ScrollDiffDown),
-                                KeyCode::Char('k') | KeyCode::Up => Some(Message::ScrollDiffUp),
-                                KeyCode::Char('g') => Some(Message::ScrollToTop),
-                                KeyCode::Char('G') => Some(Message::ScrollToBottom),
-                                KeyCode::Char(' ') => Some(Message::MoveDown),
-                                KeyCode::Char('J') => Some(Message::MoveDown),
-                                KeyCode::Char('K') => Some(Message::MoveUp),
-                                KeyCode::Char('n') => Some(Message::NextHunk),
-                                KeyCode::Char('N') => Some(Message::PrevHunk),
-                                KeyCode::Char('s') => Some(Message::StageHunk),
-                                KeyCode::Char('u') => Some(Message::UnstageHunk),
-                                KeyCode::Char('S') => Some(Message::StageFile),
-                                KeyCode::Char('U') => Some(Message::UnstageFile),
-                                KeyCode::Char('d') => Some(Message::DiscardHunk),
-                                KeyCode::Char('D') => Some(Message::DiscardFile),
-                                KeyCode::Char('b') => Some(Message::ToggleSidebar),
-                                KeyCode::Char('f') => Some(Message::ToggleFullFile),
-                                KeyCode::Char('c') => Some(Message::StartComment),
-                                KeyCode::Char('r') => Some(Message::ReloadDiff),
-                                KeyCode::Char('h') => Some(Message::SelectSidebar),
-                                KeyCode::Char('l') => Some(Message::SelectFile),
-                                KeyCode::Char('z') => Some(Message::Undo),
-                                KeyCode::Char('Z') => Some(Message::Redo),
-                                KeyCode::Tab => Some(Message::SwitchFocus),
-                                KeyCode::Esc => Some(Message::SwitchFocus),
-                                _ => None,
-                            },
+                            Focus::DiffView => {
+                                if app.mode == AppMode::Visual {
+                                    translate_visual_key(key.code)
+                                        .or(match key.code {
+                                            KeyCode::Char('v') => Some(Message::ExitVisual),
+                                            _ => None,
+                                        })
+                                        .or_else(|| translate_diff_common_key(key.code))
+                                } else {
+                                    match key.code {
+                                        KeyCode::Char('j') | KeyCode::Down => Some(Message::MoveCursorDown),
+                                        KeyCode::Char('k') | KeyCode::Up => Some(Message::MoveCursorUp),
+                                        KeyCode::Char(' ') => Some(Message::MoveDown),
+                                        KeyCode::Char('J') => Some(Message::MoveDown),
+                                        KeyCode::Char('K') => Some(Message::MoveUp),
+                                        KeyCode::Char('n') => Some(Message::NextHunk),
+                                        KeyCode::Char('N') => Some(Message::PrevHunk),
+                                        KeyCode::Char('s') => Some(Message::StageHunk),
+                                        KeyCode::Char('u') => Some(Message::UnstageHunk),
+                                        KeyCode::Char('S') => Some(Message::StageFile),
+                                        KeyCode::Char('U') => Some(Message::UnstageFile),
+                                        KeyCode::Char('d') => Some(Message::DiscardHunk),
+                                        KeyCode::Char('D') => Some(Message::DiscardFile),
+                                        KeyCode::Char('c') => Some(Message::StartComment),
+                                        KeyCode::Char('v') => Some(Message::EnterVisual),
+                                        _ => translate_diff_common_key(key.code),
+                                    }
+                                }
+                            }
                             Focus::CommentInput => unreachable!(),
                         };
                         if let Some(msg) = msg {
@@ -210,28 +210,24 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                     let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
                         .split(area);
 
-                    if app.sidebar_collapsed {
-                        let diff_rect = rows[0];
-                        let msg = translate_mouse(mev, Rect::ZERO, Rect::ZERO, diff_rect);
-                        if let Some(msg) = msg {
-                            app.update(msg);
-                        }
+                    let (staged_area, unstaged_area, diff_rect) = if app.sidebar_collapsed {
+                        (Rect::ZERO, Rect::ZERO, rows[0])
                     } else {
                         let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
                             .split(rows[0]);
-                        let sidebar_rect = chunks[0];
-                        let diff_rect = chunks[1];
-
-                        let (staged_area, unstaged_area) = sidebar_section_areas(
-                            sidebar_rect,
+                        let (staged, unstaged) = sidebar_section_areas(
+                            chunks[0],
                             app.staged_files.len(),
                             app.unstaged_files.len(),
                         );
+                        (staged, unstaged, chunks[1])
+                    };
 
-                        let msg = translate_mouse(mev, staged_area, unstaged_area, diff_rect);
-                        if let Some(msg) = msg {
-                            app.update(msg);
-                        }
+                    if let Some(msg) = translate_mouse(mev, staged_area, unstaged_area, diff_rect) {
+                        app.update(msg);
+                    }
+                    if let Some(msg) = translate_diff_mouse(mev, diff_rect, &app) {
+                        app.update(msg);
                     }
                 }
                 _ => {}
@@ -294,6 +290,35 @@ fn run_editor(
     }
 }
 
+fn translate_diff_common_key(key: KeyCode) -> Option<Message> {
+    match key {
+        KeyCode::Char('q') => Some(Message::Quit),
+        KeyCode::Char('g') => Some(Message::ScrollToTop),
+        KeyCode::Char('G') => Some(Message::ScrollToBottom),
+        KeyCode::Char('b') => Some(Message::ToggleSidebar),
+        KeyCode::Char('f') => Some(Message::ToggleFullFile),
+        KeyCode::Char('r') => Some(Message::ReloadDiff),
+        KeyCode::Char('h') => Some(Message::SelectSidebar),
+        KeyCode::Char('l') => Some(Message::SelectFile),
+        KeyCode::Char('z') => Some(Message::Undo),
+        KeyCode::Char('Z') => Some(Message::Redo),
+        KeyCode::Tab => Some(Message::SwitchFocus),
+        _ => None,
+    }
+}
+
+fn translate_visual_key(key: KeyCode) -> Option<Message> {
+    match key {
+        KeyCode::Char('j') | KeyCode::Down => Some(Message::ExtendSelectionDown),
+        KeyCode::Char('k') | KeyCode::Up => Some(Message::ExtendSelectionUp),
+        KeyCode::Char('s') => Some(Message::StageSelectedLines),
+        KeyCode::Char('u') => Some(Message::UnstageSelectedLines),
+        KeyCode::Char('c') => Some(Message::StartComment),
+        KeyCode::Esc => Some(Message::ExitVisual),
+        _ => None,
+    }
+}
+
 fn translate_mouse(mev: MouseEvent, staged_area: Rect, unstaged_area: Rect, diff: Rect) -> Option<Message> {
     match mev.kind {
         MouseEventKind::Down(MouseButton::Left) => {
@@ -322,6 +347,25 @@ fn translate_mouse(mev: MouseEvent, staged_area: Rect, unstaged_area: Rect, diff
             } else {
                 None
             }
+        }
+        _ => None,
+    }
+}
+
+fn translate_diff_mouse(mev: MouseEvent, diff: Rect, app: &App) -> Option<Message> {
+    if !rect_contains(diff, mev.column, mev.row) {
+        return None;
+    }
+    let inner_y = diff.y.saturating_add(1);
+    let row_offset = mev.row.saturating_sub(inner_y) as usize;
+    let rendered_row = (app.diff_scroll as usize).saturating_add(row_offset);
+    let line_idx = app.row_to_cursor(rendered_row);
+    match mev.kind {
+        MouseEventKind::Down(MouseButton::Left) => {
+            Some(Message::MouseClickDiffLine(line_idx))
+        }
+        MouseEventKind::Drag(MouseButton::Left) => {
+            Some(Message::MouseDragDiff(line_idx))
         }
         _ => None,
     }

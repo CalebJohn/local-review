@@ -47,32 +47,20 @@ pub struct GitRepo {
     repo: git2::Repository,
 }
 
-/// Apply a single hunk to old content using the standard patch walk approach.
-///
-/// Walks the hunk's lines to reconstruct the output:
-/// 1. Copy old lines before the hunk (using old_start)
-/// 2. For each hunk line: keep Equal, add Insert, skip Delete
-/// 3. Copy old lines after the hunk
-///
-/// This avoids using new_lineno for positioning, which breaks for non-first
-/// hunks in multi-hunk diffs (new_lineno is global to the full new file).
-fn apply_hunk_to_content(old_content: &str, hunk: &DiffHunk) -> String {
+pub fn apply_hunk_to_content(old_content: &str, hunk: &DiffHunk, selected_lines: Option<&[usize]>) -> String {
     let old_lines: Vec<&str> = old_content.lines().collect();
     let hunk_start = (hunk.old_start as usize).saturating_sub(1);
 
-    // Number of old-file lines this hunk spans (Equal + Delete lines)
     let old_count = hunk.lines.iter()
         .filter(|l| l.kind == ChangeKind::Delete || l.kind == ChangeKind::Equal)
         .count();
 
     let mut result: Vec<&str> = Vec::new();
 
-    // Lines before the hunk — unchanged
     let before_end = hunk_start.min(old_lines.len());
     result.extend_from_slice(&old_lines[..before_end]);
 
-    // Walk the hunk
-    for line in &hunk.lines {
+    for (i, line) in hunk.lines.iter().enumerate() {
         match line.kind {
             ChangeKind::Equal => {
                 if let Some(ln) = line.old_lineno {
@@ -83,13 +71,23 @@ fn apply_hunk_to_content(old_content: &str, hunk: &DiffHunk) -> String {
                 }
             }
             ChangeKind::Insert => {
-                result.push(line.content.trim_end_matches('\n'));
+                if selected_lines.is_none_or(|lines| lines.contains(&i)) {
+                    result.push(line.content.trim_end_matches('\n'));
+                }
             }
-            ChangeKind::Delete => {} // skip
+            ChangeKind::Delete => {
+                if selected_lines.is_some_and(|lines| !lines.contains(&i)) {
+                    if let Some(ln) = line.old_lineno {
+                        let idx = (ln as usize).saturating_sub(1);
+                        if idx < old_lines.len() {
+                            result.push(old_lines[idx]);
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // Lines after the hunk — unchanged
     let after_start = (hunk_start + old_count).min(old_lines.len());
     result.extend_from_slice(&old_lines[after_start..]);
 
@@ -100,32 +98,20 @@ fn apply_hunk_to_content(old_content: &str, hunk: &DiffHunk) -> String {
     text
 }
 
-/// Reverse-apply a single hunk to the "new" content (the index side of a staged diff).
-///
-/// Mirror of apply_hunk_to_content but operates on the "new" side:
-/// 1. Copy new lines before the hunk (using new_start)
-/// 2. For each hunk line: keep Equal, restore Delete (from hunk content), skip Insert
-/// 3. Copy new lines after the hunk
-///
-/// Used for unstaging: the hunk describes HEAD -> index changes, so reversing it
-/// removes this hunk's changes from the index while keeping other staged hunks intact.
-fn reverse_apply_hunk_to_content(new_content: &str, hunk: &DiffHunk) -> String {
+pub fn reverse_apply_hunk_to_content(new_content: &str, hunk: &DiffHunk, selected_lines: Option<&[usize]>) -> String {
     let new_lines: Vec<&str> = new_content.lines().collect();
     let hunk_start = (hunk.new_start as usize).saturating_sub(1);
 
-    // Number of new-file lines this hunk spans (Equal + Insert lines)
     let new_count = hunk.lines.iter()
         .filter(|l| l.kind == ChangeKind::Insert || l.kind == ChangeKind::Equal)
         .count();
 
     let mut result: Vec<&str> = Vec::new();
 
-    // Lines before the hunk — unchanged
     let before_end = hunk_start.min(new_lines.len());
     result.extend_from_slice(&new_lines[..before_end]);
 
-    // Walk the hunk in reverse
-    for line in &hunk.lines {
+    for (i, line) in hunk.lines.iter().enumerate() {
         match line.kind {
             ChangeKind::Equal => {
                 if let Some(ln) = line.new_lineno {
@@ -136,14 +122,23 @@ fn reverse_apply_hunk_to_content(new_content: &str, hunk: &DiffHunk) -> String {
                 }
             }
             ChangeKind::Delete => {
-                // This line was in HEAD but not index; restore it
-                result.push(line.content.trim_end_matches('\n'));
+                if selected_lines.is_none_or(|lines| lines.contains(&i)) {
+                    result.push(line.content.trim_end_matches('\n'));
+                }
             }
-            ChangeKind::Insert => {} // This was added in index; remove it
+            ChangeKind::Insert => {
+                if selected_lines.is_some_and(|lines| !lines.contains(&i)) {
+                    if let Some(ln) = line.new_lineno {
+                        let idx = (ln as usize).saturating_sub(1);
+                        if idx < new_lines.len() {
+                            result.push(new_lines[idx]);
+                        }
+                    }
+                }
+            }
         }
     }
 
-    // Lines after the hunk — unchanged
     let after_start = (hunk_start + new_count).min(new_lines.len());
     result.extend_from_slice(&new_lines[after_start..]);
 
@@ -333,8 +328,8 @@ impl GitRepo {
         Ok(())
     }
 
-    pub fn stage_hunk(&self, path: &str, old_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
-        let new_text = apply_hunk_to_content(old_content, hunk);
+    pub fn stage_hunk(&self, path: &str, old_content: &str, hunk: &DiffHunk, selected_lines: Option<&[usize]>) -> Result<(), Box<dyn std::error::Error>> {
+        let new_text = apply_hunk_to_content(old_content, hunk, selected_lines);
 
         let mut index = self.repo.index()?;
         let entry = self.index_entry_for_path(&index, path);
@@ -344,8 +339,8 @@ impl GitRepo {
         Ok(())
     }
 
-    pub fn unstage_hunk(&self, path: &str, old_index_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
-        let new_index_content = reverse_apply_hunk_to_content(old_index_content, hunk);
+    pub fn unstage_hunk(&self, path: &str, old_index_content: &str, hunk: &DiffHunk, selected_lines: Option<&[usize]>) -> Result<(), Box<dyn std::error::Error>> {
+        let new_index_content = reverse_apply_hunk_to_content(old_index_content, hunk, selected_lines);
 
         let mut index = self.repo.index()?;
 
@@ -388,7 +383,7 @@ impl GitRepo {
     pub fn discard_hunk(&self, path: &str, workdir_content: &str, hunk: &DiffHunk) -> Result<(), Box<dyn std::error::Error>> {
         let workdir = self.workdir_or_err()?;
 
-        let new_content = reverse_apply_hunk_to_content(workdir_content, hunk);
+        let new_content = reverse_apply_hunk_to_content(workdir_content, hunk, None);
         let full_path = workdir.join(path);
 
         // Preserve symlinks: if the workdir entry is a symlink, recreate it
@@ -559,7 +554,7 @@ mod tests {
 
     // Helper: apply hunk and return lines (strips trailing newline for easy assertion)
     fn apply_hunk_lines(old_content: &str, hunk: &DiffHunk) -> Vec<String> {
-        let result = apply_hunk_to_content(old_content, hunk);
+        let result = apply_hunk_to_content(old_content, hunk, None);
         result.lines().map(|s| s.to_string()).collect()
     }
 
@@ -696,7 +691,7 @@ mod tests {
             ],
             has_header: true,
         };
-        let result = apply_hunk_to_content("a\nb\n", &hunk);
+        let result = apply_hunk_to_content("a\nb\n", &hunk, None);
         assert_eq!(result, "X\nb\n");
     }
 
@@ -710,7 +705,7 @@ mod tests {
             ],
             has_header: true,
         };
-        let result = apply_hunk_to_content("a\nb", &hunk);
+        let result = apply_hunk_to_content("a\nb", &hunk, None);
         assert_eq!(result, "X\nb");
     }
 
@@ -722,7 +717,7 @@ mod tests {
         let new = "a\nb\nC\nd\ne\n";
         let hunks = compute_hunks(old, new, 3);
         assert_eq!(hunks.len(), 1);
-        let result = apply_hunk_to_content(old, &hunks[0]);
+        let result = apply_hunk_to_content(old, &hunks[0], None);
         assert_eq!(result, new);
     }
 
@@ -737,12 +732,12 @@ mod tests {
         assert_eq!(hunks.len(), 2, "Expected 2 hunks, got {}", hunks.len());
 
         // Apply only hunk 2 (the LINE15 change)
-        let result = apply_hunk_to_content(old, &hunks[1]);
+        let result = apply_hunk_to_content(old, &hunks[1], None);
         let expected = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
         assert_eq!(result, expected, "Applying hunk 2 should only change line15, not line2");
 
         // Apply only hunk 1 (the LINE2 change)
-        let result = apply_hunk_to_content(old, &hunks[0]);
+        let result = apply_hunk_to_content(old, &hunks[0], None);
         let expected = "line1\nLINE2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\n";
         assert_eq!(result, expected, "Applying hunk 1 should only change line2, not line15");
     }
@@ -750,7 +745,7 @@ mod tests {
     // ---- reverse_apply_hunk_to_content tests ----
 
     fn reverse_apply_hunk_lines(new_content: &str, hunk: &DiffHunk) -> Vec<String> {
-        let result = reverse_apply_hunk_to_content(new_content, hunk);
+        let result = reverse_apply_hunk_to_content(new_content, hunk, None);
         result.lines().map(|s| s.to_string()).collect()
     }
 
@@ -831,12 +826,12 @@ mod tests {
         assert_eq!(hunks.len(), 2);
 
         // Reverse-apply hunk 2 on new content: should undo LINE15, keep LINE2
-        let result = reverse_apply_hunk_to_content(new, &hunks[1]);
+        let result = reverse_apply_hunk_to_content(new, &hunks[1], None);
         let expected = "line1\nLINE2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nline15\nline16\nline17\nline18\nline19\nline20\n";
         assert_eq!(result, expected, "Reversing hunk 2 should only undo line15, keeping LINE2");
 
         // Reverse-apply hunk 1 on new content: should undo LINE2, keep LINE15
-        let result = reverse_apply_hunk_to_content(new, &hunks[0]);
+        let result = reverse_apply_hunk_to_content(new, &hunks[0], None);
         let expected = "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10\nline11\nline12\nline13\nline14\nLINE15\nline16\nline17\nline18\nline19\nline20\n";
         assert_eq!(result, expected, "Reversing hunk 1 should only undo LINE2, keeping LINE15");
     }
@@ -851,7 +846,7 @@ mod tests {
             ],
             has_header: true,
         };
-        let result = reverse_apply_hunk_to_content("X\nb\n", &hunk);
+        let result = reverse_apply_hunk_to_content("X\nb\n", &hunk, None);
         assert_eq!(result, "a\nb\n");
     }
 
@@ -865,8 +860,193 @@ mod tests {
             ],
             has_header: true,
         };
-        let result = reverse_apply_hunk_to_content("X\nb", &hunk);
+        let result = reverse_apply_hunk_to_content("X\nb", &hunk, None);
         assert_eq!(result, "a\nb");
+    }
+
+    // ---- line-filtered apply tests ----
+
+    fn apply_hunk_filtered_lines(old_content: &str, hunk: &DiffHunk, selected: &[usize]) -> Vec<String> {
+        let result = apply_hunk_to_content(old_content, hunk, Some(selected));
+        result.lines().map(|s| s.to_string()).collect()
+    }
+
+    fn reverse_apply_hunk_filtered_lines(new_content: &str, hunk: &DiffHunk, selected: &[usize]) -> Vec<String> {
+        let result = reverse_apply_hunk_to_content(new_content, hunk, Some(selected));
+        result.lines().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn test_filtered_apply_empty_selection_returns_old() {
+        // Empty selection: no changes applied, output should equal old content
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+            ],
+            has_header: true,
+        };
+        assert_eq!(apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[]), vec!["a", "b", "c"]);
+    }
+
+    #[test]
+    fn test_filtered_apply_all_selected_equals_full_apply() {
+        // All change lines selected: should match full apply
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+            ],
+            has_header: true,
+        };
+        let filtered = apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[1, 2]);
+        let full = apply_hunk_lines("a\nb\nc\n", &hunk);
+        assert_eq!(filtered, full);
+    }
+
+    #[test]
+    fn test_filtered_apply_select_only_delete() {
+        // Select only the delete (index 1): b removed, X not inserted
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+            ],
+            has_header: true,
+        };
+        assert_eq!(apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[1]), vec!["a", "c"]);
+    }
+
+    #[test]
+    fn test_filtered_apply_select_only_insert() {
+        // Select only the insert (index 2): X added, b kept
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(1), new_lineno: Some(1), content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(2), new_lineno: None,    content: "b\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(2), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
+            ],
+            has_header: true,
+        };
+        assert_eq!(apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[2]), vec!["a", "b", "X", "c"]);
+    }
+
+    #[test]
+    fn test_filtered_apply_non_contiguous_selection() {
+        // Two separate changes; select only the first delete
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(1), content: "b\n".into() },
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(3), new_lineno: None,    content: "c\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
+            ],
+            has_header: true,
+        };
+        // Select only first delete (index 0): a removed, c kept
+        assert_eq!(apply_hunk_filtered_lines("a\nb\nc\nd\n", &hunk, &[0]), vec!["b", "c", "d"]);
+    }
+
+    #[test]
+    fn test_filtered_reverse_apply_empty_selection_returns_new() {
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+            ],
+            has_header: true,
+        };
+        assert_eq!(reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[]), vec!["X", "b", "c"]);
+    }
+
+    #[test]
+    fn test_filtered_reverse_apply_all_selected_equals_full_reverse() {
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+            ],
+            has_header: true,
+        };
+        let filtered = reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[0, 1]);
+        let full = reverse_apply_hunk_lines("X\nb\nc\n", &hunk);
+        assert_eq!(filtered, full);
+    }
+
+    #[test]
+    fn test_filtered_reverse_apply_select_only_delete_restore() {
+        // Select only the delete (index 0): restore "a", keep "X"
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+            ],
+            has_header: true,
+        };
+        assert_eq!(reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[0]), vec!["a", "X", "b", "c"]);
+    }
+
+    #[test]
+    fn test_filtered_reverse_apply_select_only_insert_remove() {
+        // Select only the insert (index 1): remove "X", keep "a" absent
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+                DiffLine { kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
+            ],
+            has_header: true,
+        };
+        assert_eq!(reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[1]), vec!["b", "c"]);
+    }
+
+    #[test]
+    fn test_filtered_apply_preserves_trailing_newline() {
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+            ],
+            has_header: true,
+        };
+        // Select both change lines: delete a, insert X
+        let result = apply_hunk_to_content("a\nb\n", &hunk, Some(&[0, 1]));
+        assert_eq!(result, "X\nb\n");
+    }
+
+    #[test]
+    fn test_filtered_reverse_apply_preserves_trailing_newline() {
+        let hunk = DiffHunk {
+            old_start: 1, new_start: 1,
+            lines: vec![
+                DiffLine { kind: ChangeKind::Delete, old_lineno: Some(1), new_lineno: None,    content: "a\n".into() },
+                DiffLine { kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
+            ],
+            has_header: true,
+        };
+        // Select both change lines: restore a, remove X
+        let result = reverse_apply_hunk_to_content("X\nb\n", &hunk, Some(&[0, 1]));
+        assert_eq!(result, "a\nb\n");
     }
 
     #[test]
@@ -878,10 +1058,10 @@ mod tests {
         let hunks = compute_hunks(old, new, 3);
         assert_eq!(hunks.len(), 1);
 
-        let applied = apply_hunk_to_content(old, &hunks[0]);
+        let applied = apply_hunk_to_content(old, &hunks[0], None);
         assert_eq!(applied, new);
 
-        let reversed = reverse_apply_hunk_to_content(new, &hunks[0]);
+        let reversed = reverse_apply_hunk_to_content(new, &hunks[0], None);
         assert_eq!(reversed, old);
     }
 
@@ -921,7 +1101,7 @@ mod tests {
 
         // Stage only the second hunk using GitRepo
         let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
-        git_repo.stage_hunk("test.txt", old_content, &hunks[1]).unwrap();
+        git_repo.stage_hunk("test.txt", old_content, &hunks[1], None).unwrap();
 
         // Verify workdir is preserved (should still have both changes)
         let workdir_after = std::fs::read_to_string(&file_path).unwrap();
@@ -981,7 +1161,7 @@ mod tests {
         assert_eq!(staged_hunks.len(), 2, "Expected 2 staged hunks");
 
         // Unstage hunk 1 (the LINE2 change)
-        git_repo.unstage_hunk("test.txt", &index_content_before, &staged_hunks[0]).unwrap();
+        git_repo.unstage_hunk("test.txt", &index_content_before, &staged_hunks[0], None).unwrap();
 
         // Verify: workdir should be preserved
         let workdir_after = std::fs::read_to_string(&file_path).unwrap();

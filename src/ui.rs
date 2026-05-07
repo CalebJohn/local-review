@@ -1,10 +1,10 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 
-use crate::app::{App, Focus, SidebarSection};
+use crate::app::{App, AppMode, Focus, SidebarSection};
 use crate::diff::types::{ChangeKind, DiffContent};
 use crate::git::types::{FileEntry, FileStatus};
-use crate::syntax::{StyledDiffContent, StyledSpan};
+use crate::syntax::StyledDiffContent;
 
 pub fn view(frame: &mut ratatui::Frame, app: &App) {
     let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
@@ -181,40 +181,26 @@ fn format_lineno(n: Option<u32>) -> String {
     }
 }
 
-fn diff_lines(diff: &DiffContent, current_hunk_index: Option<usize>) -> Vec<Line<'static>> {
-    let mut lines: Vec<Line<'static>> = Vec::new();
-    for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
-        let in_hunk = hunk.has_header && current_hunk_index == Some(hunk_idx);
-        if hunk.has_header {
-            lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
-        }
-        let gutter = if in_hunk { "│" } else { " " };
-        for dl in &hunk.lines {
-            let content = dl.content.trim_end_matches('\n').to_string();
-            let (prefix, content_style) = match dl.kind {
-                ChangeKind::Equal => (" ", Style::default()),
-                ChangeKind::Insert => ("+", Style::default().fg(Color::Green)),
-                ChangeKind::Delete => ("-", Style::default().fg(Color::Red)),
-            };
-
-            let lineno_span = Span::styled(
-                format!("{} {} ", format_lineno(dl.old_lineno), format_lineno(dl.new_lineno)),
-                Style::default().fg(Color::DarkGray),
-            );
-            let body_span = Span::styled(format!("{}{}", prefix, content), content_style);
-
-            lines.push(Line::from(vec![Span::raw(gutter), lineno_span, body_span]));
-        }
+fn apply_cursor_selection_style(line: Line<'static>, is_cursor: bool, is_selected: bool) -> Line<'static> {
+    if is_cursor {
+        Line::from(line.spans.into_iter().map(|s| s.style(Style::default().bg(Color::Black))).collect::<Vec<_>>())
+    } else if is_selected {
+        Line::from(line.spans.into_iter().map(|s| s.style(Style::default().bg(Color::Blue))).collect::<Vec<_>>())
+    } else {
+        line
     }
-    lines
 }
 
-fn diff_lines_styled(
+fn diff_lines(
     diff: &DiffContent,
-    styled: &StyledDiffContent,
+    styled: Option<&StyledDiffContent>,
     current_hunk_index: Option<usize>,
+    visual_selection: &[usize],
+    diff_cursor: usize,
+    mode: &AppMode,
 ) -> Vec<Line<'static>> {
     let mut lines: Vec<Line<'static>> = Vec::new();
+    let mut global_line_idx: usize = 0;
     for (hunk_idx, hunk) in diff.hunks.iter().enumerate() {
         let in_hunk = hunk.has_header && current_hunk_index == Some(hunk_idx);
         if hunk.has_header {
@@ -229,18 +215,30 @@ fn diff_lines_styled(
                 ChangeKind::Delete => ("-", Style::default().fg(Color::Red)),
             };
 
+            let is_selected = match (visual_selection.first(), visual_selection.last()) {
+                (Some(&start), Some(&end)) => global_line_idx >= start && global_line_idx <= end,
+                _ => false,
+            };
+            let is_cursor = mode == &AppMode::Normal && global_line_idx == diff_cursor;
+            let gutter_style = if is_selected {
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+            } else if is_cursor {
+                Style::default().fg(Color::White).add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+
             let lineno_span = Span::styled(
                 format!("{} {} ", format_lineno(dl.old_lineno), format_lineno(dl.new_lineno)),
-                Style::default().fg(Color::DarkGray),
+                gutter_style,
             );
 
-            // Only apply syntax styling on Equal lines. Keep +/- as single-span full-line color.
-            let styled_line: Option<&Vec<StyledSpan>> = match dl.kind {
+            let styled_line = styled.and_then(|sd| match dl.kind {
                 ChangeKind::Equal => dl.new_lineno
-                    .and_then(|ln| styled.lines_by_new_lineno.get(&ln))
-                    .or_else(|| dl.old_lineno.and_then(|ln| styled.lines_by_old_lineno.get(&ln))),
+                    .and_then(|ln| sd.lines_by_new_lineno.get(&ln))
+                    .or_else(|| dl.old_lineno.and_then(|ln| sd.lines_by_old_lineno.get(&ln))),
                 _ => None,
-            };
+            });
 
             let gutter_span = Span::raw(gutter);
             let line = if let Some(spans) = styled_line {
@@ -258,7 +256,8 @@ fn diff_lines_styled(
                 Line::from(vec![gutter_span, lineno_span, body_span])
             };
 
-            lines.push(line);
+            lines.push(apply_cursor_selection_style(line, is_cursor, is_selected));
+            global_line_idx += 1;
         }
     }
     lines
@@ -304,6 +303,9 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             spans.extend([Span::styled(" q ", key_style), Span::styled(" quit ", desc_style)]);
         }
         Focus::DiffView => {
+            if app.mode == AppMode::Visual {
+                spans.extend([Span::styled(" [VISUAL] ", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)), sep.clone()]);
+            }
             spans.extend([Span::styled(" n ", key_style), Span::styled(" next hunk ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" N ", key_style), Span::styled(" prev hunk ", desc_style), sep.clone()]);
             if in_staged {
@@ -316,7 +318,7 @@ fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
                 spans.extend([Span::styled(" D ", key_style), Span::styled(" discard file ", desc_style), sep.clone()]);
             }
             spans.extend([Span::styled(" c ", key_style), Span::styled(" comment ", desc_style), sep.clone()]);
-            spans.extend([Span::styled(" j/k ", key_style), Span::styled(" scroll ", desc_style), sep.clone()]);
+            spans.extend([Span::styled(" j/k ", key_style), Span::styled(" navigate ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" e ", key_style), Span::styled(" edit ", desc_style), sep.clone()]);
             spans.extend([Span::styled(" f ", key_style), Span::styled(full_file_label, desc_style), sep.clone()]);
             spans.extend([Span::styled(" b ", key_style), Span::styled(if app.sidebar_collapsed { " show sidebar " } else { " hide sidebar " }, desc_style), sep.clone()]);
@@ -380,10 +382,7 @@ fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
         Some(dc) => {
             let inner = block.inner(area);
             app.diff_viewport_height.set(inner.height);
-            let lines = match &app.styled_diff {
-                Some(sd) => diff_lines_styled(dc, sd, app.current_hunk_index),
-                None    => diff_lines(dc, app.current_hunk_index),
-            };
+            let lines = diff_lines(dc, app.styled_diff.as_ref(), app.current_hunk_index, &app.visual_selection, app.diff_cursor, &app.mode);
             let paragraph = Paragraph::new(lines)
                 .block(block)
                 .scroll((app.diff_scroll, 0));
