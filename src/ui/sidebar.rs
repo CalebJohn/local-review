@@ -31,50 +31,59 @@ pub fn render_sidebar(
 
     render_file_list(
         frame,
-        &app.staged_files,
-        "Staged",
         staged_area,
-        sidebar_focused && app.sidebar_section == SidebarSection::Staged,
-        if app.sidebar_section == SidebarSection::Staged {
-            Some(app.selected_index)
-        } else {
-            None
+        &FileListProps {
+            files: &app.staged_files,
+            title: "Staged",
+            focused: sidebar_focused && app.sidebar_section == SidebarSection::Staged,
+            selected: if app.sidebar_section == SidebarSection::Staged {
+                Some(app.selected_index)
+            } else {
+                None
+            },
+            formatting_only_cache: &app.formatting_only_cache,
+            section: SidebarSection::Staged,
         },
-        &app.formatting_only_cache,
-        SidebarSection::Staged,
     );
 
     render_file_list(
         frame,
-        &app.unstaged_files,
-        "Unstaged",
         unstaged_area,
-        sidebar_focused && app.sidebar_section == SidebarSection::Unstaged,
-        if app.sidebar_section == SidebarSection::Unstaged {
-            Some(app.selected_index)
-        } else {
-            None
+        &FileListProps {
+            files: &app.unstaged_files,
+            title: "Unstaged",
+            focused: sidebar_focused && app.sidebar_section == SidebarSection::Unstaged,
+            selected: if app.sidebar_section == SidebarSection::Unstaged {
+                Some(app.selected_index)
+            } else {
+                None
+            },
+            formatting_only_cache: &app.formatting_only_cache,
+            section: SidebarSection::Unstaged,
         },
-        &app.formatting_only_cache,
-        SidebarSection::Unstaged,
     );
 }
 
-pub fn render_file_list(
-    frame: &mut ratatui::Frame,
-    files: &[FileEntry],
-    title: &str,
-    area: Rect,
-    focused: bool,
-    selected: Option<usize>,
-    formatting_only_cache: &HashMap<(String, SidebarSection), bool>,
-    section: SidebarSection,
-) {
-    let items: Vec<ListItem> = files
+pub struct FileListProps<'a> {
+    pub files: &'a [FileEntry],
+    pub title: &'a str,
+    pub focused: bool,
+    pub selected: Option<usize>,
+    pub formatting_only_cache: &'a HashMap<(String, SidebarSection), bool>,
+    pub section: SidebarSection,
+}
+
+pub fn render_file_list(frame: &mut ratatui::Frame, area: Rect, props: &FileListProps) {
+    let items: Vec<ListItem> = props
+        .files
         .iter()
         .map(|entry| {
             let status = entry.display_status();
-            let is_formatting_only = formatting_only_cache.get(&(entry.path.clone(), section)).copied().unwrap_or(false);
+            let is_formatting_only = props
+                .formatting_only_cache
+                .get(&(entry.path.clone(), props.section))
+                .copied()
+                .unwrap_or(false);
             let mut style = status_style(entry);
             if is_formatting_only {
                 style = style.add_modifier(Modifier::DIM);
@@ -87,13 +96,13 @@ pub fn render_file_list(
         })
         .collect();
 
-    let count = files.len();
-    let title_text = format!("{} ({})", title, count);
+    let count = props.files.len();
+    let title_text = format!("{} ({})", props.title, count);
 
     let block = Block::default()
         .borders(Borders::ALL)
         .title(title_text)
-        .border_style(Style::default().fg(super::border_color(focused)));
+        .border_style(Style::default().fg(super::border_color(props.focused)));
 
     let list = List::new(items).block(block).highlight_style(
         Style::default()
@@ -102,8 +111,8 @@ pub fn render_file_list(
     );
 
     let mut state = ListState::default();
-    if selected.is_some() {
-        state.select(selected);
+    if props.selected.is_some() {
+        state.select(props.selected);
     }
 
     frame.render_stateful_widget(list, area, &mut state);
