@@ -34,17 +34,39 @@ The justfile contains Docker-based development environments (`just code`, `just 
 Elm architecture: events are translated to `Message` variants, dispatched through `App::update()`, and the UI re-renders from state.
 
 ```
-main.rs          Event loop: keyboard/mouse -> Message -> app.update() -> ui::view()
-app.rs           App state + update logic. Owns repo, file lists, diff, scroll, focus.
-ui.rs            Pure render functions. Sidebar (staged/unstaged), diff view, footer.
-git/mod.rs       GitRepo wrapper around git2::Repository. Content retrieval + staging.
-git/types.rs     FileEntry, FileStatus, ContentResult
-diff/mod.rs      Diff computation via `similar` crate. compute_hunks(), compute_diff_content()
-diff/types.rs    DiffContent, DiffHunk, DiffLine, ChangeKind
-syntax/mod.rs    build_styled_diff(), lang_for_extension(), StyledDiffContent
+main.rs              Event loop: keyboard/mouse -> Message -> app.update() -> ui::view()
+input.rs             Translate raw crossterm events to Message variants
+
+app/mod.rs           App state + update() thin dispatcher
+app/navigation.rs    Navigation handlers (move, scroll, focus, hunk jump)
+app/staging.rs       Stage/unstage/discard handlers + undo integration
+app/visual.rs        Visual-mode selection handlers
+app/comment.rs       CommentContext, format_comment, comment handlers
+app/geometry.rs      DiffLineKey, coordinate helper functions
+
+ui/mod.rs            Top-level view() layout + diff_lines()
+ui/sidebar.rs        Sidebar render (staged/unstaged file lists)
+ui/diff_view.rs      Diff view render (hunk headers, change lines, highlighting)
+ui/footer.rs         Context-sensitive footer bar + footer_line() tests
+
+git/mod.rs           GitRepo struct, content retrieval (head/index/workdir)
+git/hunk.rs          apply_hunk_to_content, reverse_apply_hunk_to_content
+git/staging.rs       Snapshot types, stage/unstage/discard/snapshot impl methods
+git/status.rs        Binary detection, git2::Status -> FileStatus mappers
+git/types.rs         FileEntry, FileStatus, ContentResult
+
+diff/mod.rs          Diff computation via `similar` crate. compute_hunks(), compute_diff_content()
+diff/types.rs        DiffContent, DiffHunk, DiffLine, ChangeKind
+
+classify/mod.rs      Hunk classification (formatting-only vs semantic changes)
+classify/canonical.rs  Token normalization for formatting detection
+
+syntax/mod.rs        build_styled_diff(), lang_for_extension(), StyledDiffContent
 syntax/registry.rs   Lazy-init HighlightConfiguration for all 11 languages (OnceLock)
 syntax/mapping.rs    Tree-sitter highlight events -> per-line StyledSpan vectors
 syntax/scope.rs      Maps highlight scope names to ratatui Style (colors)
+
+undo.rs              UndoManager with snapshot-based undo/redo
 ```
 
 ### Key data flow
@@ -61,7 +83,7 @@ Two focus modes: `Sidebar` and `DiffView`. Sidebar has two sections (Staged/Unst
 
 ## Conventions
 
-- All tests are inline `#[cfg(test)] mod tests` in the same file as the code they test. No separate test files.
+- Tests use `#[cfg(test)] mod tests` either inline or as a co-located file (e.g. `git/tests.rs` included via `mod tests;`).
 - Content from git is always returned as `ContentResult` enum (Text/Binary/NotFound), with binary detection via null-byte-in-first-8KB heuristic.
 - `DiffHunk.old_start` / `new_start` and line numbers are 1-based (matching git convention).
 - The `apply_hunk_to_content` function uses `old_start` + `old_lineno` for positioning (not `new_lineno`), which is critical for applying individual hunks from multi-hunk diffs.
