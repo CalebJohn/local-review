@@ -447,3 +447,236 @@ fn test_classify_diff_c_char_vs_string_is_semantic() {
         "C char vs string should be semantic (different types)"
     );
 }
+
+// ── import reorder tests ──────────────────────────────────────
+
+#[test]
+fn test_classify_diff_rust_import_reorder_is_formatting() {
+    let old = "use std::fs;\nuse std::io;\nuse std::path;\n";
+    let new = "use std::io;\nuse std::path;\nuse std::fs;\n";
+    let lang = language_for_extension("rs");
+    let mut dc = crate::diff::compute_diff_content("test.rs", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "rs");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Rust import reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_python_import_reorder_is_formatting() {
+    let old = "import os\nimport sys\nimport json\n";
+    let new = "import json\nimport os\nimport sys\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Python import reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_python_from_import_reorder_is_formatting() {
+    let old = "from os import path\nfrom sys import argv\n";
+    let new = "from sys import argv\nfrom os import path\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Python from-import reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_js_import_reorder_is_formatting() {
+    let old = "import foo from 'foo';\nimport bar from 'bar';\n";
+    let new = "import bar from 'bar';\nimport foo from 'foo';\n";
+    let lang = language_for_extension("js");
+    let mut dc = crate::diff::compute_diff_content("test.js", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "js");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "JS import reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_ts_import_reorder_is_formatting() {
+    let old = "import { Component } from 'react';\nimport { render } from 'react-dom';\n";
+    let new = "import { render } from 'react-dom';\nimport { Component } from 'react';\n";
+    let lang = language_for_extension("ts");
+    let mut dc = crate::diff::compute_diff_content("test.ts", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "ts");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "TS import reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_rust_multiline_import_reorder_is_formatting() {
+    let old = "use std::collections::{\n    HashMap,\n    BTreeMap,\n};\nuse std::io;\n";
+    let new = "use std::io;\nuse std::collections::{\n    HashMap,\n    BTreeMap,\n};\n";
+    let lang = language_for_extension("rs");
+    let mut dc = crate::diff::compute_diff_content("test.rs", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "rs");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Rust multi-line import reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_python_multiline_import_reorder_is_formatting() {
+    let old = "from os import (\n    path,\n    getcwd,\n)\nimport sys\n";
+    let new = "import sys\nfrom os import (\n    path,\n    getcwd,\n)\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Python multi-line import reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_import_reorder_with_blank_lines_is_formatting() {
+    let old = "import os\nimport sys\n\nimport json\n";
+    let new = "import json\n\nimport os\nimport sys\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Import reorder with blank line changes should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_import_with_addition_is_semantic() {
+    let old = "import os\nimport sys\n";
+    let new = "import sys\nimport os\nimport json\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(
+        changed.iter().any(|l| !l.formatting_only),
+        "Import reorder with a new import added should be semantic"
+    );
+}
+
+#[test]
+fn test_classify_diff_import_with_removal_is_semantic() {
+    let old = "import os\nimport sys\nimport json\n";
+    let new = "import sys\nimport os\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(
+        changed.iter().any(|l| !l.formatting_only),
+        "Import reorder with a removal should be semantic"
+    );
+}
+
+#[test]
+fn test_classify_diff_go_import_block_reorder_is_formatting() {
+    let old = "package main\n\nimport (\n\t\"fmt\"\n\t\"os\"\n)\n";
+    let new = "package main\n\nimport (\n\t\"os\"\n\t\"fmt\"\n)\n";
+    let lang = language_for_extension("go");
+    let mut dc = crate::diff::compute_diff_content("test.go", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "go");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Go import block reorder should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_non_import_reorder_is_semantic() {
+    let old = "let a = 1;\nlet b = 2;\n";
+    let new = "let b = 2;\nlet a = 1;\n";
+    let lang = language_for_extension("rs");
+    let mut dc = crate::diff::compute_diff_content("test.rs", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "rs");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(
+        changed.iter().any(|l| !l.formatting_only),
+        "Reordering non-import statements should be semantic"
+    );
+}
+
+#[test]
+fn test_classify_diff_c_include_reorder_is_formatting() {
+    let old = "#include <stdio.h>\n#include <stdlib.h>\n";
+    let new = "#include <stdlib.h>\n#include <stdio.h>\n";
+    let lang = language_for_extension("c");
+    let mut dc = crate::diff::compute_diff_content("test.c", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "c");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "C #include reorder should be formatting_only"
+    );
+}
