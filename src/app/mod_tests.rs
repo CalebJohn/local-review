@@ -1234,7 +1234,7 @@
         let mut dc = crate::diff::compute_diff_content("t.rs", Some(old), Some(new));
 
         let lang = crate::classify::language_for_extension("rs");
-        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang, "rs");
 
         let changed: Vec<_> = dc.hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).collect();
         assert!(
@@ -1255,7 +1255,7 @@
         let mut dc = crate::diff::compute_diff_content("t.rs", Some(old), Some(new));
 
         let lang = crate::classify::language_for_extension("rs");
-        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang, "rs");
 
         let changed: Vec<_> = dc.hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).collect();
         assert!(
@@ -1271,7 +1271,7 @@
         let mut dc = crate::diff::compute_diff_content("README.txt", Some(old), Some(new));
 
         let lang = crate::classify::language_for_extension("txt");
-        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang, "txt");
 
         // Unknown language: all lines should remain non-formatting
         let changed: Vec<_> = dc.hunks.iter().flat_map(|h| h.lines.iter()).filter(|l| l.kind != ChangeKind::Equal).collect();
@@ -1291,7 +1291,7 @@
         let new = "fn foo() {\n    let x = 1;\n}\n";
         let mut dc = crate::diff::compute_diff_content("unstaged.rs", Some(old), Some(new));
         let lang = crate::classify::language_for_extension("rs");
-        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang, "rs");
         app.diff_content = Some(dc);
 
         // After classification, all hunks should be formatting-only
@@ -1310,7 +1310,7 @@
         let new = "let y = 2;\n";
         let mut dc = crate::diff::compute_diff_content("unstaged.rs", Some(old), Some(new));
         let lang = crate::classify::language_for_extension("rs");
-        crate::classify::classify_diff(&mut dc.hunks, old, new, lang);
+        crate::classify::classify_diff(&mut dc.hunks, old, new, lang, "rs");
         app.diff_content = Some(dc);
 
         let all_formatting = app.diff_content.as_ref().unwrap().hunks.iter().all(|h| h.is_formatting_only());

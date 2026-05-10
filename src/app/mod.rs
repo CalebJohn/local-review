@@ -290,7 +290,7 @@ impl App {
                 .extension()
                 .and_then(|e| e.to_str());
             let lang = ext.and_then(language_for_extension);
-            classify_diff(&mut dc.hunks, old_str, new_str, lang);
+            classify_diff(&mut dc.hunks, old_str, new_str, lang, ext.unwrap_or(""));
 
             // Cache whether this file has only formatting changes (Task 10)
             let all_formatting = dc.hunks.iter().all(|h| h.is_formatting_only());

@@ -52,7 +52,13 @@ pub fn strip_trailing_commas(tokens: &[String]) -> Vec<String> {
 /// so that `"foo"` and `'foo'` compare equal.
 ///
 /// All other tokens are returned unchanged.
-pub fn normalize_token(token: &str) -> String {
+pub fn normalize_token(token: &str, quotes_equivalent: bool) -> String {
+    if !quotes_equivalent {
+        return token.to_string();
+    }
+    if token == "\"" || token == "'" {
+        return "Q".to_string();
+    }
     let bytes = token.as_bytes();
     if bytes.len() >= 2 {
         let first = bytes[0] as char;
@@ -68,8 +74,8 @@ pub fn normalize_token(token: &str) -> String {
 /// Normalize an entire token sequence.
 ///
 /// Applies `normalize_token` to each token in the sequence.
-pub fn normalize_tokens(tokens: &[String]) -> Vec<String> {
-    tokens.iter().map(|t| normalize_token(t)).collect()
+pub fn normalize_tokens(tokens: &[String], quotes_equivalent: bool) -> Vec<String> {
+    tokens.iter().map(|t| normalize_token(t, quotes_equivalent)).collect()
 }
 
 /// Build a canonical string from a normalized token sequence.
@@ -83,9 +89,9 @@ pub fn canonical_string(normalized: &[String]) -> String {
 ///
 /// Returns `true` if the sequences are equivalent after stripping trailing
 /// commas and normalizing string quote styles.
-pub fn compare_canonical(old_tokens: &[String], new_tokens: &[String]) -> bool {
-    let old = normalize_tokens(&strip_trailing_commas(old_tokens));
-    let new = normalize_tokens(&strip_trailing_commas(new_tokens));
+pub fn compare_canonical(old_tokens: &[String], new_tokens: &[String], quotes_equivalent: bool) -> bool {
+    let old = normalize_tokens(&strip_trailing_commas(old_tokens), quotes_equivalent);
+    let new = normalize_tokens(&strip_trailing_commas(new_tokens), quotes_equivalent);
     canonical_string(&old) == canonical_string(&new)
 }
 
@@ -167,37 +173,37 @@ mod tests {
 
     #[test]
     fn test_normalize_token_double_quoted_string() {
-        assert_eq!(normalize_token("\"hello\""), "Shello");
+        assert_eq!(normalize_token("\"hello\"", true), "Shello");
     }
 
     #[test]
     fn test_normalize_token_single_quoted_string() {
-        assert_eq!(normalize_token("'hello'"), "Shello");
+        assert_eq!(normalize_token("'hello'", true), "Shello");
     }
 
     #[test]
     fn test_normalize_token_mismatched_quotes_not_normalized() {
         // Mismatched quotes are not valid strings, should pass through
-        assert_eq!(normalize_token("\"hello'"), "\"hello'");
+        assert_eq!(normalize_token("\"hello'", true), "\"hello'");
     }
 
     #[test]
     fn test_normalize_token_non_string_unchanged() {
-        assert_eq!(normalize_token("fn"), "fn");
-        assert_eq!(normalize_token("123"), "123");
-        assert_eq!(normalize_token("variable_name"), "variable_name");
+        assert_eq!(normalize_token("fn", false), "fn");
+        assert_eq!(normalize_token("123", false), "123");
+        assert_eq!(normalize_token("variable_name", false), "variable_name");
     }
 
     #[test]
     fn test_normalize_token_empty_string_literal() {
-        assert_eq!(normalize_token("\"\""), "S");
-        assert_eq!(normalize_token("''"), "S");
+        assert_eq!(normalize_token("\"\"", true), "S");
+        assert_eq!(normalize_token("''", true), "S");
     }
 
     #[test]
     fn test_normalize_token_single_char_not_string() {
-        assert_eq!(normalize_token("a"), "a");
-        assert_eq!(normalize_token("\""), "\"");
+        assert_eq!(normalize_token("a", false), "a");
+        assert_eq!(normalize_token("\"", false), "\"");
     }
 
     // ── normalize_tokens ────────────────────────────────────────────
@@ -205,14 +211,14 @@ mod tests {
     #[test]
     fn test_normalize_tokens_mixed() {
         let tokens = vec!["let".into(), "x".into(), "=".into(), "\"hello\"".into()];
-        let result = normalize_tokens(&tokens);
+        let result = normalize_tokens(&tokens, true);
         assert_eq!(result, vec!["let", "x", "=", "Shello"]);
     }
 
     #[test]
     fn test_normalize_tokens_all_strings_equivalent() {
-        let a = normalize_tokens(&["\"foo\"".into()]);
-        let b = normalize_tokens(&["'foo'".into()]);
+        let a = normalize_tokens(&["\"foo\"".into()], true);
+        let b = normalize_tokens(&["'foo'".into()], true);
         assert_eq!(a, b, "double and single quoted strings should normalize equally");
     }
 
@@ -240,33 +246,33 @@ mod tests {
     fn test_compare_canonical_identical() {
         let old = vec!["fn".into(), "main".into(), "()".into()];
         let new = vec!["fn".into(), "main".into(), "()".into()];
-        assert!(compare_canonical(&old, &new));
+        assert!(compare_canonical(&old, &new, false));
     }
 
     #[test]
     fn test_compare_canonical_trailing_comma_ignored() {
         let old = vec!["a".into(), "b".into()];
         let new = vec!["a".into(), "b".into(), ",".into()];
-        assert!(compare_canonical(&old, &new));
+        assert!(compare_canonical(&old, &new, false));
     }
 
     #[test]
     fn test_compare_canonical_quote_style_ignored() {
         let old = vec!["\"hello\"".into()];
         let new = vec!["'hello'".into()];
-        assert!(compare_canonical(&old, &new));
+        assert!(compare_canonical(&old, &new, true));
     }
 
     #[test]
     fn test_compare_canonical_semantic_difference() {
         let old = vec!["let".into(), "x".into(), "=".into(), "1".into()];
         let new = vec!["let".into(), "y".into(), "=".into(), "1".into()];
-        assert!(!compare_canonical(&old, &new), "variable rename should be semantic");
+        assert!(!compare_canonical(&old, &new, false), "variable rename should be semantic");
     }
 
     #[test]
     fn test_compare_canonical_empty_sequences() {
-        assert!(compare_canonical(&[], &[]));
+        assert!(compare_canonical(&[], &[], false));
     }
 
     #[test]
@@ -274,6 +280,38 @@ mod tests {
         // Trailing comma + quote style change simultaneously
         let old = vec!["call".into(), "(" .into(), "\"arg\"".into(), ")".into()];
         let new = vec!["call".into(), "(" .into(), "'arg'".into(), ")".into(), ",".into()];
-        assert!(compare_canonical(&old, &new));
+        assert!(compare_canonical(&old, &new, true));
+    }
+
+    // ── bare quote normalization ────────────────────────────────────
+
+    #[test]
+    fn test_normalize_token_bare_double_quote_when_equivalent() {
+        assert_eq!(normalize_token("\"", true), "Q");
+    }
+
+    #[test]
+    fn test_normalize_token_bare_single_quote_when_equivalent() {
+        assert_eq!(normalize_token("'", true), "Q");
+    }
+
+    #[test]
+    fn test_normalize_token_bare_quotes_not_equivalent() {
+        assert_eq!(normalize_token("\"", false), "\"");
+        assert_eq!(normalize_token("'", false), "'");
+    }
+
+    #[test]
+    fn test_compare_canonical_bare_quotes_equivalent() {
+        let old: Vec<String> = vec!["=".into(), "\"".into(), "a".into(), "\"".into()];
+        let new: Vec<String> = vec!["=".into(), "'".into(), "a".into(), "'".into()];
+        assert!(compare_canonical(&old, &new, true));
+    }
+
+    #[test]
+    fn test_compare_canonical_bare_quotes_not_equivalent() {
+        let old: Vec<String> = vec!["=".into(), "\"".into(), "a".into(), "\"".into()];
+        let new: Vec<String> = vec!["=".into(), "'".into(), "a".into(), "'".into()];
+        assert!(!compare_canonical(&old, &new, false));
     }
 }

@@ -176,7 +176,7 @@ fn test_classify_diff_whitespace_only_is_formatting() {
     );
     let lang = language_for_extension("rs");
     let mut hunks = vec![hunk];
-    classify_diff(&mut hunks, &old_content, &new_content, lang);
+    classify_diff(&mut hunks, &old_content, &new_content, lang, "rs");
     assert!(
         hunks[0].lines.iter().all(|l| l.kind == ChangeKind::Equal || l.formatting_only),
         "whitespace-only changes should be formatting_only"
@@ -191,7 +191,7 @@ fn test_classify_diff_semantic_change_is_not_formatting() {
     );
     let lang = language_for_extension("rs");
     let mut hunks = vec![hunk];
-    classify_diff(&mut hunks, &old_content, &new_content, lang);
+    classify_diff(&mut hunks, &old_content, &new_content, lang, "rs");
     let changed: Vec<_> = hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).collect();
     assert!(
         changed.iter().all(|l| !l.formatting_only),
@@ -206,7 +206,7 @@ fn test_classify_diff_no_language_skips_classification() {
         vec![(1, "let x = 1;\n")],
     );
     let mut hunks = vec![hunk];
-    classify_diff(&mut hunks, &old_content, &new_content, None);
+    classify_diff(&mut hunks, &old_content, &new_content, None, "");
     assert!(
         hunks[0].lines.iter().all(|l| !l.formatting_only),
         "no language should leave all lines as non-formatting"
@@ -222,7 +222,7 @@ fn test_classify_diff_trailing_comma_is_formatting() {
     );
     let lang = language_for_extension("rs");
     let mut hunks = vec![hunk];
-    classify_diff(&mut hunks, &old_content, &new_content, lang);
+    classify_diff(&mut hunks, &old_content, &new_content, lang, "rs");
     assert!(
         hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).all(|l| l.formatting_only),
         "trailing comma addition should be formatting_only"
@@ -237,7 +237,7 @@ fn test_classify_diff_line_split_is_formatting() {
     );
     let lang = language_for_extension("rs").unwrap();
     let mut hunks = vec![hunk];
-    classify_diff(&mut hunks, &old_content, &new_content, Some(lang));
+    classify_diff(&mut hunks, &old_content, &new_content, Some(lang), "rs");
     assert!(
         hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).all(|l| l.formatting_only),
         "line split with same tokens should be formatting_only"
@@ -252,7 +252,7 @@ fn test_classify_diff_pure_insertion_is_semantic() {
     );
     let lang = language_for_extension("rs");
     let mut hunks = vec![hunk];
-    classify_diff(&mut hunks, &old_content, &new_content, lang);
+    classify_diff(&mut hunks, &old_content, &new_content, lang, "rs");
     assert!(
         hunks[0].lines.iter().filter(|l| l.kind != ChangeKind::Equal).all(|l| !l.formatting_only),
         "pure insertion with no counterpart should be semantic"
@@ -299,7 +299,7 @@ fn test_classify_diff_mixed_context_and_changes() {
     let old_content = "fn main() {\nlet x=1;\n}\n";
     let new_content = "fn main() {\n    let x = 1;\n}\n";
     let lang = language_for_extension("rs");
-    classify_diff(std::slice::from_mut(&mut hunk), old_content, new_content, lang);
+    classify_diff(std::slice::from_mut(&mut hunk), old_content, new_content, lang, "rs");
     assert!(!hunk.lines[0].formatting_only, "Equal line should not be formatting_only");
     assert!(hunk.lines[1].formatting_only, "Delete should be formatting_only");
     assert!(hunk.lines[2].formatting_only, "Insert should be formatting_only");
@@ -312,7 +312,7 @@ fn test_classify_diff_blank_line_insertion_is_formatting() {
     let new = "def hello():\n    print('world')\n\n";
     let lang = language_for_extension("py");
     let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
-    classify_diff(&mut dc.hunks, old, new, lang);
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
     let changed: Vec<_> = dc.hunks.iter()
         .flat_map(|h| h.lines.iter())
         .filter(|l| l.kind != ChangeKind::Equal)
@@ -330,7 +330,7 @@ fn test_classify_diff_blank_line_deletion_is_formatting() {
     let new = "def hello():\n    print('world')\n";
     let lang = language_for_extension("py");
     let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
-    classify_diff(&mut dc.hunks, old, new, lang);
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
     let changed: Vec<_> = dc.hunks.iter()
         .flat_map(|h| h.lines.iter())
         .filter(|l| l.kind != ChangeKind::Equal)
@@ -348,7 +348,7 @@ fn test_classify_diff_pure_code_insertion_stays_semantic() {
     let new = "def hello():\n    print('world')\n    pass\n";
     let lang = language_for_extension("py");
     let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
-    classify_diff(&mut dc.hunks, old, new, lang);
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
     let changed: Vec<_> = dc.hunks.iter()
         .flat_map(|h| h.lines.iter())
         .filter(|l| l.kind != ChangeKind::Equal)
@@ -356,5 +356,94 @@ fn test_classify_diff_pure_code_insertion_stays_semantic() {
     assert!(
         changed.iter().any(|l| !l.formatting_only),
         "inserting actual code should remain semantic"
+    );
+}
+
+// ── quote normalization e2e tests ──────────────────────────────
+
+#[test]
+fn test_classify_diff_python_quote_change_is_formatting() {
+    let old = "test = \"a\"\n";
+    let new = "test = 'a'\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "Python quote style change should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_python_quote_and_value_change_is_semantic() {
+    let old = "test = \"a\"\n";
+    let new = "test = 'b'\n";
+    let lang = language_for_extension("py");
+    let mut dc = crate::diff::compute_diff_content("test.py", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "py");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(
+        changed.iter().any(|l| !l.formatting_only),
+        "Python quote + value change should be semantic"
+    );
+}
+
+#[test]
+fn test_classify_diff_rust_char_vs_string_is_semantic() {
+    let old = "let x = 'a';\n";
+    let new = "let x = \"a\";\n";
+    let lang = language_for_extension("rs");
+    let mut dc = crate::diff::compute_diff_content("test.rs", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "rs");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(
+        changed.iter().any(|l| !l.formatting_only),
+        "Rust char vs string should be semantic (different types)"
+    );
+}
+
+#[test]
+fn test_classify_diff_js_quote_change_is_formatting() {
+    let old = "const x = \"hello\";\n";
+    let new = "const x = 'hello';\n";
+    let lang = language_for_extension("js");
+    let mut dc = crate::diff::compute_diff_content("test.js", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "js");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(!changed.is_empty(), "should have changed lines");
+    assert!(
+        changed.iter().all(|l| l.formatting_only),
+        "JS quote style change should be formatting_only"
+    );
+}
+
+#[test]
+fn test_classify_diff_c_char_vs_string_is_semantic() {
+    let old = "char x = 'a';\n";
+    let new = "char *x = \"a\";\n";
+    let lang = language_for_extension("c");
+    let mut dc = crate::diff::compute_diff_content("test.c", Some(old), Some(new));
+    classify_diff(&mut dc.hunks, old, new, lang, "c");
+    let changed: Vec<_> = dc.hunks.iter()
+        .flat_map(|h| h.lines.iter())
+        .filter(|l| l.kind != ChangeKind::Equal)
+        .collect();
+    assert!(
+        changed.iter().any(|l| !l.formatting_only),
+        "C char vs string should be semantic (different types)"
     );
 }

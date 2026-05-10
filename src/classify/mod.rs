@@ -20,6 +20,7 @@ pub fn classify_diff(
     old_content: &str,
     new_content: &str,
     lang: Option<tree_sitter::Language>,
+    ext: &str,
 ) {
     let Some(lang) = lang else { return };
     if old_content.len() > MAX_HIGHLIGHT_BYTES || new_content.len() > MAX_HIGHLIGHT_BYTES {
@@ -32,8 +33,9 @@ pub fn classify_diff(
         return;
     };
 
+    let qe = quotes_equivalent(ext);
     for hunk in hunks.iter_mut() {
-        classify_hunk(hunk, &old_tokens, &new_tokens);
+        classify_hunk(hunk, &old_tokens, &new_tokens, qe);
     }
 }
 
@@ -47,6 +49,7 @@ fn classify_hunk(
     hunk: &mut DiffHunk,
     old_tokens: &HashMap<u32, Vec<String>>,
     new_tokens: &HashMap<u32, Vec<String>>,
+    quotes_equivalent: bool,
 ) {
     let lines = &mut hunk.lines;
     let mut i = 0;
@@ -97,7 +100,7 @@ fn classify_hunk(
         let old_group_tokens = canonical::collect_tokens(old_tokens, &delete_lines);
         let new_group_tokens = canonical::collect_tokens(new_tokens, &insert_lines);
 
-        if canonical::compare_canonical(&old_group_tokens, &new_group_tokens) {
+        if canonical::compare_canonical(&old_group_tokens, &new_group_tokens, quotes_equivalent) {
             for line in &mut lines[group_start..group_end] {
                 line.formatting_only = true;
             }
@@ -124,6 +127,10 @@ pub fn language_for_extension(ext: &str) -> Option<tree_sitter::Language> {
         "toml"       => Some(tree_sitter_toml_ng::LANGUAGE.into()),
         _            => None,
     }
+}
+
+fn quotes_equivalent(ext: &str) -> bool {
+    matches!(ext, "py" | "js" | "jsx" | "ts" | "tsx")
 }
 
 /// Extract tokens (leaf-node text) from source code, keyed by 1-based line number.
