@@ -11,10 +11,23 @@ use crate::app::App;
 pub use diff_view::diff_lines;
 
 pub fn case_insensitive_match_ranges(text: &str, pattern: &str) -> Vec<(usize, usize)> {
-    let pat_chars: Vec<char> = pattern.chars().flat_map(|c| c.to_lowercase()).collect();
-    if pat_chars.is_empty() {
+    if pattern.is_empty() {
         return vec![];
     }
+    let text_lower = text.to_lowercase();
+    let pattern_lower = pattern.to_lowercase();
+
+    if text_lower.len() == text.len() {
+        return text_lower
+            .match_indices(&pattern_lower)
+            .map(|(start, m)| (start, start + m.len()))
+            .collect();
+    }
+
+    // Lowercasing changed byte lengths (e.g. Turkish İ -> i̇).
+    // Fall back to char-by-char matching so returned byte offsets
+    // are valid indices into the original text.
+    let pat_chars: Vec<char> = pattern_lower.chars().collect();
     let text_chars: Vec<(usize, char)> = text.char_indices().collect();
     let mut ranges = Vec::new();
     'outer: for i in 0..text_chars.len() {
