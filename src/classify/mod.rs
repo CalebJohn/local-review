@@ -188,20 +188,7 @@ fn classify_hunk_as_import_reorder(
 /// then resolves the name to a `tree_sitter::Language`.
 pub fn language_for_extension(ext: &str) -> Option<tree_sitter::Language> {
     let lang_name = crate::syntax::lang_for_extension(ext)?;
-    match lang_name {
-        "rust"       => Some(tree_sitter_rust::LANGUAGE.into()),
-        "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
-        "tsx"        => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
-        "javascript" => Some(tree_sitter_javascript::LANGUAGE.into()),
-        "python"     => Some(tree_sitter_python::LANGUAGE.into()),
-        "go"         => Some(tree_sitter_go::LANGUAGE.into()),
-        "c"          => Some(tree_sitter_c::LANGUAGE.into()),
-        "cpp"        => Some(tree_sitter_cpp::LANGUAGE.into()),
-        "json"       => Some(tree_sitter_json::LANGUAGE.into()),
-        "yaml"       => Some(tree_sitter_yaml::LANGUAGE.into()),
-        "toml"       => Some(tree_sitter_toml_ng::LANGUAGE.into()),
-        _            => None,
-    }
+    crate::syntax::language_for_name(lang_name)
 }
 
 fn quotes_equivalent(ext: &str) -> bool {
