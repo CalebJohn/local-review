@@ -74,6 +74,10 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
     let watcher_index = index_path.clone();
     let mut watcher = notify::recommended_watcher(move |res: Result<notify::Event, _>| {
         if let Ok(ev) = res {
+            // Only care about content changes, not metadata/access time
+            if ev.kind.is_access() {
+                return;
+            }
             if !(ev.kind.is_modify() || ev.kind.is_create() || ev.kind.is_remove()) {
                 return;
             }
@@ -90,8 +94,13 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
     })?;
     watcher.watch(&workdir, notify::RecursiveMode::Recursive)?;
 
+    let mut dirty = true;
+
     loop {
-        terminal.draw(|frame| ui::view(frame, &app))?;
+        if dirty {
+            terminal.draw(|frame| ui::view(frame, &app))?;
+            dirty = false;
+        }
 
         // Poll crossterm events with 100ms timeout (non-blocking)
         if event::poll(Duration::from_millis(100))? {
@@ -126,6 +135,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                             };
                             if let Some(msg) = msg {
                                 app.update(msg);
+                                dirty = true;
                             }
                             continue;
                         }
@@ -141,6 +151,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 // then do a full refresh to pick up all changes at once.
                                 while watch_rx.try_recv().is_ok() {}
                                 app.refresh_files();
+                                dirty = true;
                                 if let Err(e) = editor_result {
                                     app.status_message = Some(format!("Editor: {}", e));
                                 }
@@ -207,6 +218,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                         };
                         if let Some(msg) = msg {
                             app.update(msg);
+                            dirty = true;
                         }
                     }
                 Event::Mouse(mev) => {
@@ -230,11 +242,14 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
 
                     if let Some(msg) = translate_mouse(mev, staged_area, unstaged_area, diff_rect) {
                         app.update(msg);
+                        dirty = true;
                     }
                     if let Some(msg) = translate_diff_mouse(mev, diff_rect, &app) {
                         app.update(msg);
+                        dirty = true;
                     }
                 }
+                Event::Resize(_, _) => { dirty = true; }
                 _ => {}
             }
         }
@@ -250,8 +265,10 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
         }
         if saw_index {
             app.update(Message::IndexChanged);
+            dirty = true;
         } else if saw_workdir {
             app.update(Message::WorkdirChanged);
+            dirty = true;
         }
 
         if app.should_quit || SIGTERM_RECEIVED.load(Ordering::Relaxed) {
