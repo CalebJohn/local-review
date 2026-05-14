@@ -9,15 +9,21 @@ pub enum FileStatus {
     Untracked,
 }
 
+impl FileStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FileStatus::Modified => "M",
+            FileStatus::Added => "A",
+            FileStatus::Deleted => "D",
+            FileStatus::Renamed => "R",
+            FileStatus::Untracked => "?",
+        }
+    }
+}
+
 impl fmt::Display for FileStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            FileStatus::Modified => write!(f, "M"),
-            FileStatus::Added => write!(f, "A"),
-            FileStatus::Deleted => write!(f, "D"),
-            FileStatus::Renamed => write!(f, "R"),
-            FileStatus::Untracked => write!(f, "?"),
-        }
+        f.write_str(self.as_str())
     }
 }
 
@@ -36,27 +42,10 @@ pub struct FileEntry {
 }
 
 impl FileEntry {
-    /// Returns the single-char indicator for the dominant status.
-    /// Prefers workdir_status, falls back to index_status.
     pub fn display_status(&self) -> &str {
-        if let Some(ref status) = self.workdir_status {
-            match status {
-                FileStatus::Modified => "M",
-                FileStatus::Added => "A",
-                FileStatus::Deleted => "D",
-                FileStatus::Renamed => "R",
-                FileStatus::Untracked => "?",
-            }
-        } else if let Some(ref status) = self.index_status {
-            match status {
-                FileStatus::Modified => "M",
-                FileStatus::Added => "A",
-                FileStatus::Deleted => "D",
-                FileStatus::Renamed => "R",
-                FileStatus::Untracked => "?",
-            }
-        } else {
-            " "
-        }
+        self.workdir_status
+            .or(self.index_status)
+            .map(|s| s.as_str())
+            .unwrap_or(" ")
     }
 }
