@@ -95,62 +95,24 @@ pub fn render_footer(frame: &mut ratatui::Frame, app: &App, area: Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::collections::HashMap;
     use crate::app::{App, AppMode, Focus, SearchDirection, SidebarSection};
-    use crate::git::GitRepo;
     use crate::git::types::{FileEntry, FileStatus};
-    use crate::undo::UndoManager;
 
     fn test_app() -> App {
-        let repo = GitRepo::open(".").expect("repo should open");
-        App {
-            repo,
-            staged_files: vec![FileEntry {
+        let mut app = App::test_with_files(vec![
+            FileEntry {
                 path: "staged.rs".to_string(),
                 index_status: Some(FileStatus::Modified),
                 workdir_status: None,
-            }],
-            unstaged_files: vec![FileEntry {
+            },
+            FileEntry {
                 path: "unstaged.rs".to_string(),
                 index_status: None,
                 workdir_status: Some(FileStatus::Modified),
-            }],
-            selected_index: 0,
-            sidebar_section: SidebarSection::Unstaged,
-            diff_content: None,
-            diff_scroll: 0,
-            focus: Focus::Sidebar,
-            should_quit: false,
-            styled_diff: None,
-            current_hunk_index: None,
-            scroll_positions: HashMap::new(),
-            diff_stale: false,
-            auto_reload: false,
-            status_message: None,
-            sidebar_collapsed: false,
-            pending_discard: None,
-            show_full_file: false,
-            diff_viewport_height: 0,
-            undo: UndoManager::new(),
-            comment_input: String::new(),
-            comment_context: None,
-            mode: AppMode::Normal,
-            diff_cursor: 0,
-            visual_selection: None,
-            visual_cursor: 0,
-            visual_anchor: 0,
-            visual_from_mouse: false,
-            semantic_filter: false,
-            formatting_only_cache: HashMap::new(),
-            search_query: String::new(),
-            search_direction: SearchDirection::Forward,
-            search_origin: Focus::Sidebar,
-            search_pattern: None,
-            search_case_sensitive: false,
-            search_matches: Vec::new(),
-            search_sidebar_matches: Vec::new(),
-            search_match_cursor: None,
-        }
+            },
+        ]);
+        app.sidebar_section = SidebarSection::Unstaged;
+        app
     }
 
     fn span_text(line: &Line) -> String {

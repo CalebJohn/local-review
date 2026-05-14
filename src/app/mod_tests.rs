@@ -26,56 +26,6 @@
         }
     }
 
-    /// Build an App without opening a repo. Used for testing update() logic.
-    fn test_app_with_files(files: Vec<FileEntry>) -> App {
-        let repo = GitRepo::open(".").expect("repo should open");
-        let (staged_files, unstaged_files) = App::partition_files(&files);
-        let initial_section = if !staged_files.is_empty() {
-            SidebarSection::Staged
-        } else {
-            SidebarSection::Unstaged
-        };
-        App {
-            repo,
-            staged_files,
-            unstaged_files,
-            selected_index: 0,
-            sidebar_section: initial_section,
-            diff_content: None,
-            diff_scroll: 0,
-            focus: Focus::Sidebar,
-            should_quit: false,
-            styled_diff: None,
-            current_hunk_index: None,
-            scroll_positions: HashMap::new(),
-            diff_stale: false,
-            auto_reload: false,
-            status_message: None,
-            sidebar_collapsed: false,
-            pending_discard: None,
-            show_full_file: false,
-            diff_viewport_height: 0,
-            undo: UndoManager::new(),
-            comment_input: String::new(),
-            comment_context: None,
-            mode: AppMode::Normal,
-            diff_cursor: 0,
-            visual_selection: None,
-            visual_cursor: 0,
-            visual_anchor: 0,
-            visual_from_mouse: false,
-            semantic_filter: false,
-            formatting_only_cache: HashMap::new(),
-            search_query: String::new(),
-            search_direction: SearchDirection::Forward,
-            search_origin: Focus::Sidebar,
-            search_pattern: None,
-            search_case_sensitive: false,
-            search_matches: Vec::new(),
-            search_sidebar_matches: Vec::new(),
-            search_match_cursor: None,
-        }
-    }
 
     #[test]
     fn test_partition_files() {
@@ -96,7 +46,7 @@
 
     #[test]
     fn test_update_move_down_within_section() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -114,7 +64,7 @@
 
     #[test]
     fn test_update_move_down_crosses_to_unstaged() {
-        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
         app.focus = Focus::DiffView;
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
         assert_eq!(app.staged_files.len(), 1);
@@ -127,7 +77,7 @@
 
     #[test]
     fn test_update_move_up_crosses_to_staged() {
-        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.sidebar_section = SidebarSection::Unstaged;
         app.selected_index = 0;
@@ -138,7 +88,7 @@
 
     #[test]
     fn test_update_move_up_at_top_of_staged_stays() {
-        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry()]);
         app.focus = Focus::DiffView;
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
         assert_eq!(app.selected_index, 0);
@@ -149,7 +99,7 @@
 
     #[test]
     fn test_update_move_down_at_bottom_of_unstaged_stays() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
         app.update(Message::MoveDown);
@@ -161,7 +111,7 @@
 
     #[test]
     fn test_move_down_wraps_within_unstaged_when_no_staged() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             unstaged_entry(),
             FileEntry {
                 path: "unstaged2.rs".to_string(),
@@ -183,7 +133,7 @@
 
     #[test]
     fn test_move_down_wraps_within_staged_when_no_unstaged() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -204,7 +154,7 @@
 
     #[test]
     fn test_move_up_wraps_within_unstaged_when_no_staged() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             unstaged_entry(),
             FileEntry {
                 path: "unstaged2.rs".to_string(),
@@ -228,7 +178,7 @@
     fn test_move_up_does_not_wrap_within_staged_when_no_unstaged() {
         // Intentional asymmetry: move_up at top of staged stays put
         // even when there are no unstaged files to transition to.
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -248,7 +198,7 @@
     fn test_move_up_transitions_to_staged_instead_of_wrapping() {
         // When staged files exist, move_up at top of unstaged transitions
         // to staged rather than wrapping within unstaged.
-        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.sidebar_section = SidebarSection::Unstaged;
         app.selected_index = 0;
@@ -261,7 +211,7 @@
     fn test_move_down_crosses_to_unstaged_instead_of_wrapping() {
         // When unstaged files exist, move_down at bottom of staged transitions
         // to unstaged rather than wrapping within staged.
-        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
         app.focus = Focus::DiffView;
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
         app.update(Message::MoveDown);
@@ -271,7 +221,7 @@
 
     #[test]
     fn test_move_down_single_file_wraps() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         assert_eq!(app.selected_index, 0);
         app.update(Message::MoveDown);
@@ -281,7 +231,7 @@
 
     #[test]
     fn test_move_up_single_file_wraps() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         assert_eq!(app.selected_index, 0);
         app.update(Message::MoveUp);
@@ -291,7 +241,7 @@
 
     #[test]
     fn test_circular_wrap_saves_scroll_position() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             unstaged_entry(),
             FileEntry {
                 path: "unstaged2.rs".to_string(),
@@ -313,7 +263,7 @@
 
     #[test]
     fn test_update_quit() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         assert!(!app.should_quit);
         app.update(Message::Quit);
         assert!(app.should_quit);
@@ -321,7 +271,7 @@
 
     #[test]
     fn test_update_switch_focus() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         assert_eq!(app.focus, Focus::Sidebar);
         app.update(Message::SwitchFocus);
         assert_eq!(app.focus, Focus::DiffView);
@@ -331,7 +281,7 @@
 
     #[test]
     fn test_update_scroll_diff_up_at_zero() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         assert_eq!(app.diff_scroll, 0);
         app.update(Message::ScrollDiffUp);
         assert_eq!(app.diff_scroll, 0);
@@ -339,7 +289,7 @@
 
     #[test]
     fn test_load_diff_for_selected_clears_styled_diff_on_empty_file_list() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.styled_diff = Some(StyledDiffContent {
             lines_by_old_lineno: std::collections::HashMap::new(),
             lines_by_new_lineno: std::collections::HashMap::new(),
@@ -350,7 +300,7 @@
 
     #[test]
     fn test_next_hunk_no_op_on_empty() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_scroll = 0;
         app.update(Message::NextHunk);
@@ -367,7 +317,7 @@
 
     #[test]
     fn test_next_hunk_advances_to_next_start() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(three_hunk_dc());
         app.diff_scroll = 0;
@@ -381,7 +331,7 @@
 
     #[test]
     fn test_prev_hunk_no_op_at_first() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(three_hunk_dc());
         app.diff_scroll = 0;
@@ -391,7 +341,7 @@
 
     #[test]
     fn test_prev_hunk_goes_to_previous_start() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(three_hunk_dc());
         app.diff_scroll = 7;
@@ -403,7 +353,7 @@
 
     #[test]
     fn test_mouse_click_staged_sidebar() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -420,7 +370,7 @@
 
     #[test]
     fn test_mouse_click_unstaged_sidebar() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.update(Message::MouseClickUnstagedSidebar(0));
         assert_eq!(app.selected_index, 0);
@@ -430,7 +380,7 @@
 
     #[test]
     fn test_mouse_click_staged_out_of_bounds_noop() {
-        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry()]);
         app.focus = Focus::DiffView;
         let before = app.selected_index;
         app.update(Message::MouseClickStagedSidebar(99));
@@ -440,7 +390,7 @@
 
     #[test]
     fn test_focus_diff_sets_focus_to_diffview() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         assert_eq!(app.focus, Focus::Sidebar);
         app.update(Message::FocusDiff);
         assert_eq!(app.focus, Focus::DiffView);
@@ -448,7 +398,7 @@
 
     #[test]
     fn test_move_down_resets_scroll_for_new_file() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -467,7 +417,7 @@
 
     #[test]
     fn test_move_up_resets_scroll_for_new_file() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -484,7 +434,7 @@
 
     #[test]
     fn test_scroll_position_saved_and_restored_on_navigation() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -509,7 +459,7 @@
 
     #[test]
     fn test_cross_section_resets_scroll_for_new_file() {
-        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
         app.diff_scroll = 20;
         // Cross from staged to unstaged
@@ -525,7 +475,7 @@
 
     #[test]
     fn test_mouse_click_resets_scroll_for_new_file() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -541,7 +491,7 @@
 
     #[test]
     fn test_mouse_click_cross_section_saves_scroll() {
-        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
         app.diff_scroll = 33;
         // Click into unstaged section
@@ -556,7 +506,7 @@
 
     #[test]
     fn test_discard_file_noop_in_staged_section() {
-        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry()]);
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
         app.update(Message::DiscardFile);
         assert!(app.pending_discard.is_none());
@@ -565,7 +515,7 @@
 
     #[test]
     fn test_discard_file_first_press_sets_pending() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
         app.update(Message::DiscardFile);
         assert_eq!(
@@ -578,7 +528,7 @@
 
     #[test]
     fn test_discard_other_key_clears_pending() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.update(Message::DiscardFile);
         assert!(app.pending_discard.is_some());
         assert!(app.status_message.is_some());
@@ -590,7 +540,7 @@
 
     #[test]
     fn test_discard_hunk_noop_in_staged_section() {
-        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = Some(0);
         app.update(Message::DiscardHunk);
@@ -599,7 +549,7 @@
 
     #[test]
     fn test_discard_hunk_first_press_sets_pending() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = Some(0);
         app.update(Message::DiscardHunk);
@@ -612,7 +562,7 @@
 
     #[test]
     fn test_discard_hunk_noop_when_no_hunk_selected() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = None;
         app.update(Message::DiscardHunk);
@@ -621,7 +571,7 @@
 
     #[test]
     fn test_discard_file_then_hunk_resets_pending() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.current_hunk_index = Some(0);
 
         // First: file discard pending
@@ -635,7 +585,7 @@
 
     #[test]
     fn test_discard_hunk_noop_when_diff_stale() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = Some(0);
         app.diff_stale = true;
@@ -823,7 +773,7 @@
     /// it when no file is selected).
     #[test]
     fn test_toggle_full_file_flips_flag() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         assert!(!app.show_full_file);
         app.update(Message::ToggleFullFile);
         assert!(app.show_full_file);
@@ -834,7 +784,7 @@
     #[test]
     fn test_scroll_positions_are_per_mode() {
         // Saved scroll for hunk mode should not bleed into full-file mode.
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.scroll_positions.insert(
             ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
             42,
@@ -859,7 +809,7 @@
     /// the rendered diff.
     #[test]
     fn test_update_hunk_from_cursor_first_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         let hunk1 = DiffHunk {
             old_start: 1,
             new_start: 1,
@@ -882,7 +832,7 @@
 
     #[test]
     fn test_update_hunk_from_cursor_second_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         let hunk1 = DiffHunk {
             old_start: 1,
             new_start: 1,
@@ -905,7 +855,7 @@
 
     #[test]
     fn test_update_hunk_from_cursor_last_line_of_last_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         let hunk1 = DiffHunk {
             old_start: 1,
             new_start: 1,
@@ -928,7 +878,7 @@
 
     #[test]
     fn test_update_hunk_from_cursor_single_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         let hunk = DiffHunk {
             old_start: 1,
             new_start: 1,
@@ -944,7 +894,7 @@
 
     #[test]
     fn test_update_hunk_from_cursor_no_content() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.diff_content = None;
         app.diff_cursor = 0;
         app.update_hunk_from_cursor();
@@ -953,7 +903,7 @@
 
     #[test]
     fn test_move_cursor_to_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         let hunk1 = DiffHunk {
             old_start: 1,
             new_start: 1,
@@ -976,7 +926,7 @@
 
     #[test]
     fn test_stage_hunk_warns_when_no_active_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = None;
         app.update(Message::StageHunk);
@@ -985,7 +935,7 @@
 
     #[test]
     fn test_unstage_hunk_warns_when_no_active_hunk() {
-        let mut app = test_app_with_files(vec![staged_only_entry()]);
+        let mut app = App::test_with_files(vec![staged_only_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = None;
         app.update(Message::UnstageHunk);
@@ -994,7 +944,7 @@
 
     #[test]
     fn test_discard_hunk_warns_and_clears_pending_when_no_active_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         // Simulate a stale pending discard from a prior hunk.
         app.pending_discard = Some(PendingDiscard::Hunk {
@@ -1011,7 +961,7 @@
 
     #[test]
     fn test_start_comment_captures_context() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = Some(2);
         app.update(Message::StartComment);
@@ -1026,7 +976,7 @@
 
     #[test]
     fn test_start_comment_ignored_when_no_hunk() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.current_hunk_index = None;
         app.update(Message::StartComment);
@@ -1036,7 +986,7 @@
 
     #[test]
     fn test_comment_input_char_and_backspace() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::CommentInput;
         app.update(Message::CommentInputChar('h'));
         app.update(Message::CommentInputChar('i'));
@@ -1051,7 +1001,7 @@
 
     #[test]
     fn test_comment_input_cancel_clears_state() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::CommentInput;
         app.comment_input = "partial".to_string();
         app.comment_context = Some(CommentContext {
@@ -1070,7 +1020,7 @@
 
     #[test]
     fn test_enter_visual_from_normal_in_diff_view() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.mode = AppMode::Normal;
         app.current_hunk_index = Some(0);
@@ -1087,7 +1037,7 @@
 
     #[test]
     fn test_enter_visual_ignored_in_sidebar() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::Sidebar;
         app.mode = AppMode::Normal;
         app.update(Message::EnterVisual);
@@ -1097,7 +1047,7 @@
 
     #[test]
     fn test_enter_visual_ignored_when_already_in_visual() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.mode = AppMode::Visual;
         app.visual_selection = Some((0, 1));
@@ -1107,7 +1057,7 @@
 
     #[test]
     fn test_exit_visual_clears_selection() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Visual;
         app.visual_selection = Some((0, 2));
         app.update(Message::ExitVisual);
@@ -1117,7 +1067,7 @@
 
     #[test]
     fn test_exit_visual_ignored_in_normal_mode() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Normal;
         app.update(Message::ExitVisual);
         assert_eq!(app.mode, AppMode::Normal);
@@ -1125,7 +1075,7 @@
 
     #[test]
     fn test_extend_selection_down() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Visual;
         app.visual_anchor = 0;
         app.visual_cursor = 0;
@@ -1149,7 +1099,7 @@
 
     #[test]
     fn test_extend_selection_up() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Visual;
         app.visual_anchor = 2;
         app.visual_cursor = 2;
@@ -1173,7 +1123,7 @@
 
     #[test]
     fn test_extend_selection_up_at_zero_stays() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Visual;
         app.visual_anchor = 0;
         app.visual_cursor = 0;
@@ -1190,7 +1140,7 @@
 
     #[test]
     fn test_extend_selection_down_at_max_stays() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Visual;
         app.visual_anchor = 2;
         app.visual_cursor = 2;
@@ -1211,7 +1161,7 @@
 
     #[test]
     fn test_extend_selection_ignored_in_normal_mode() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Normal;
         app.visual_cursor = 0;
         app.update(Message::ExtendSelectionDown);
@@ -1222,7 +1172,7 @@
 
     #[test]
     fn test_extend_selection_down_ignored_when_no_diff_content() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Visual;
         app.visual_anchor = 0;
         app.visual_cursor = 0;
@@ -1234,7 +1184,7 @@
 
     #[test]
     fn test_extend_selection_up_ignored_when_no_diff_content() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.mode = AppMode::Visual;
         app.visual_anchor = 2;
         app.visual_cursor = 2;
@@ -1248,13 +1198,13 @@
 
     #[test]
     fn test_semantic_filter_defaults_to_false() {
-        let app = test_app_with_files(vec![]);
+        let app = App::test_with_files(vec![]);
         assert!(!app.semantic_filter);
     }
 
     #[test]
     fn test_toggle_semantic_filter_flips_state() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         assert!(!app.semantic_filter);
         app.update(Message::ToggleSemanticFilter);
         assert!(app.semantic_filter);
@@ -1264,7 +1214,7 @@
 
     #[test]
     fn test_toggle_semantic_filter_available_in_sidebar() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::Sidebar;
         app.update(Message::ToggleSemanticFilter);
         assert!(app.semantic_filter);
@@ -1272,7 +1222,7 @@
 
     #[test]
     fn test_toggle_semantic_filter_available_in_diff_view() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.update(Message::ToggleSemanticFilter);
         assert!(app.semantic_filter);
@@ -1286,7 +1236,7 @@
 
     #[test]
     fn test_change_hunk_starts_skips_formatting_hunks_when_filter_on() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(make_dc(vec![
             DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
@@ -1308,7 +1258,7 @@
 
     #[test]
     fn test_next_hunk_skips_formatting_hunks_when_filter_on() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(make_dc(vec![
             DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true); 2], has_header: true, header_context: None },
@@ -1325,7 +1275,7 @@
 
     #[test]
     fn test_prev_hunk_skips_formatting_hunks_when_filter_on() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(make_dc(vec![
             DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Delete, Some(1), None, false); 3], has_header: true, header_context: None },
@@ -1343,13 +1293,13 @@
 
     #[test]
     fn test_hunk_counts_none_when_no_diff_content() {
-        let app = test_app_with_files(vec![]);
+        let app = App::test_with_files(vec![]);
         assert!(app.hunk_counts().is_none());
     }
 
     #[test]
     fn test_hunk_counts_none_when_binary() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.diff_content = Some(DiffContent {
             path: "img.png".to_string(),
             hunks: vec![],
@@ -1360,7 +1310,7 @@
 
     #[test]
     fn test_hunk_counts_none_when_empty_hunks() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.diff_content = Some(DiffContent {
             path: "t.rs".to_string(),
             hunks: vec![],
@@ -1371,7 +1321,7 @@
 
     #[test]
     fn test_hunk_counts_all_visible_when_filter_off() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.diff_content = Some(make_dc(vec![
             DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
             DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true, header_context: None },
@@ -1382,7 +1332,7 @@
 
     #[test]
     fn test_hunk_counts_hides_formatting_when_filter_on() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.diff_content = Some(make_dc(vec![
             DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
             DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true, header_context: None },
@@ -1394,7 +1344,7 @@
 
     #[test]
     fn test_hunk_counts_all_formatting_hidden() {
-        let mut app = test_app_with_files(vec![]);
+        let mut app = App::test_with_files(vec![]);
         app.diff_content = Some(make_dc(vec![
             DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
             DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, true)], has_header: true, header_context: None },
@@ -1465,7 +1415,7 @@
 
     #[test]
     fn test_formatting_only_cache_populated_for_formatting_changes() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         // Simulate loading a diff with only formatting changes
         let old = "fn foo() {\nlet x=1;\n}\n";
         let new = "fn foo() {\n    let x = 1;\n}\n";
@@ -1485,7 +1435,7 @@
 
     #[test]
     fn test_formatting_only_cache_populated_for_semantic_changes() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         let old = "let x = 1;\n";
         let new = "let y = 2;\n";
         let mut dc = crate::diff::compute_diff_content("unstaged.rs", Some(old), Some(new));
@@ -1502,7 +1452,7 @@
 
     #[test]
     fn test_formatting_only_cache_cleared_on_refresh() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.formatting_only_cache.insert(("unstaged.rs".to_string(), SidebarSection::Unstaged), true);
         assert!(app.formatting_only_cache.contains_key(&("unstaged.rs".to_string(), SidebarSection::Unstaged)));
 
@@ -1514,7 +1464,7 @@
 
     #[test]
     fn test_file_switch_clears_diff_matches_preserves_pattern() {
-        let mut app = test_app_with_files(vec![
+        let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
                 path: "staged2.rs".to_string(),
@@ -1535,7 +1485,7 @@
 
     #[test]
     fn test_sidebar_matches_cleared_on_refresh() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.search_sidebar_matches = vec![(SidebarSection::Unstaged, 0)];
 
         app.refresh_file_list();
@@ -1545,7 +1495,7 @@
 
     #[test]
     fn test_next_match_recomputes_after_clear() {
-        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(make_dc(vec![DiffHunk {
             old_start: 1,

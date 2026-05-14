@@ -140,6 +140,7 @@ pub struct App {
     pub visual_from_mouse: bool,
     pub semantic_filter: bool,
     pub formatting_only_cache: HashMap<(String, SidebarSection), bool>,
+    pub diff_cache: HashMap<(String, SidebarSection, bool), (DiffContent, Option<StyledDiffContent>)>,
     pub search_query: String,
     pub search_direction: SearchDirection,
     pub search_origin: Focus,
@@ -193,6 +194,7 @@ impl App {
             visual_from_mouse: false,
             semantic_filter: false,
             formatting_only_cache: HashMap::new(),
+            diff_cache: HashMap::new(),
             search_query: String::new(),
             search_direction: SearchDirection::Forward,
             search_origin: Focus::Sidebar,
@@ -237,7 +239,37 @@ impl App {
     }
 
     fn load_diff_for_selected(&mut self) {
-        // Restore scroll position for the newly selected file (per-mode)
+        self.restore_scroll_for_selected();
+        self.reset_diff_view_state();
+
+        let Some(entry) = self.selected_entry().cloned() else {
+            self.diff_content = None;
+            return;
+        };
+
+        let cache_key = (entry.path.clone(), self.sidebar_section, self.show_full_file);
+        if let Some((dc, styled)) = self.diff_cache.get(&cache_key) {
+            self.diff_content = Some(dc.clone());
+            self.styled_diff = styled.clone();
+            self.update_hunk_from_cursor();
+            return;
+        }
+
+        let Some((old, new)) = self.load_file_contents(&entry.path) else {
+            self.diff_content = None;
+            return;
+        };
+
+        self.compute_diff(&entry.path, old, new);
+
+        if let Some(dc) = &self.diff_content {
+            self.diff_cache.insert(cache_key, (dc.clone(), self.styled_diff.clone()));
+        }
+
+        self.update_hunk_from_cursor();
+    }
+
+    fn restore_scroll_for_selected(&mut self) {
         let files = self.current_section_files();
         if self.selected_index < files.len() {
             let entry = &files[self.selected_index];
@@ -246,7 +278,9 @@ impl App {
         } else {
             self.diff_scroll = 0;
         }
+    }
 
+    fn reset_diff_view_state(&mut self) {
         self.styled_diff = None;
         self.diff_stale = false;
         self.mode = AppMode::Normal;
@@ -255,57 +289,33 @@ impl App {
         self.visual_from_mouse = false;
         self.search_matches.clear();
         self.search_match_cursor = None;
+    }
 
-        let files = self.current_section_files();
-        if self.selected_index >= files.len() {
-            self.diff_content = None;
-            return;
-        }
-
-        let entry = files[self.selected_index].clone();
-        let path = entry.path.as_str();
-
-        // Determine which content sources to compare based on sidebar section
-        let (old_result, new_result): (
-            Result<ContentResult, String>,
-            Result<ContentResult, String>,
-        ) = match self.sidebar_section {
-            SidebarSection::Staged => {
-                // Staged section: HEAD vs index
-                (
-                    self.repo.head_content(path).map_err(|e| e.to_string()),
-                    self.repo.index_content(path).map_err(|e| e.to_string()),
-                )
-            }
-            SidebarSection::Unstaged => {
-                // Unstaged section: index vs workdir
-                (
-                    self.repo.index_content(path).map_err(|e| e.to_string()),
-                    self.repo.workdir_content(path).map_err(|e| e.to_string()),
-                )
-            }
+    fn load_file_contents(&self, path: &str) -> Option<(ContentResult, ContentResult)> {
+        let (old_result, new_result) = match self.sidebar_section {
+            SidebarSection::Staged => (
+                self.repo.head_content(path).ok(),
+                self.repo.index_content(path).ok(),
+            ),
+            SidebarSection::Unstaged => (
+                self.repo.index_content(path).ok(),
+                self.repo.workdir_content(path).ok(),
+            ),
         };
+        Some((old_result?, new_result?))
+    }
 
-        let (old_result, new_result) = match (old_result, new_result) {
-            (Ok(o), Ok(n)) => (o, n),
-            _ => {
-                self.diff_content = None;
-                return;
-            }
-        };
-
-        // Binary handling: if either side is Binary, produce the binary sentinel
-        if matches!(old_result, ContentResult::Binary) || matches!(new_result, ContentResult::Binary)
-        {
+    fn compute_diff(&mut self, path: &str, old: ContentResult, new: ContentResult) {
+        if matches!(old, ContentResult::Binary) || matches!(new, ContentResult::Binary) {
             self.diff_content = Some(binary_diff_content(path));
             return;
         }
 
-        let old_text = match &old_result {
+        let old_text = match &old {
             ContentResult::Text(s) => Some(s.as_str()),
             _ => None,
         };
-        let new_text = match &new_result {
+        let new_text = match &new {
             ContentResult::Text(s) => Some(s.as_str()),
             _ => None,
         };
@@ -316,7 +326,6 @@ impl App {
             compute_diff_content(path, old_text, new_text)
         });
 
-        // Classify diff lines as formatting-only or semantic (Task 4)
         if let Some(dc) = &mut self.diff_content {
             let old_str = old_text.unwrap_or("");
             let new_str = new_text.unwrap_or("");
@@ -326,7 +335,6 @@ impl App {
             let lang = ext.and_then(language_for_extension);
             classify_diff(&mut dc.hunks, old_str, new_str, lang, ext.unwrap_or(""));
 
-            // Cache whether this file has only formatting changes (Task 10)
             let all_formatting = dc.hunks.iter().all(|h| h.is_formatting_only());
             self.formatting_only_cache.insert((dc.path.clone(), self.sidebar_section), all_formatting);
         }
@@ -334,9 +342,6 @@ impl App {
         if let Some(dc) = &self.diff_content {
             self.styled_diff = build_styled_diff(dc, old_text, new_text);
         }
-
-        // Set the active hunk based on the current cursor position.
-        self.update_hunk_from_cursor();
     }
 
     pub fn selected_file_path(&self) -> Option<String> {
@@ -352,6 +357,7 @@ impl App {
 
     pub(super) fn refresh_file_list(&mut self) {
         self.formatting_only_cache.clear();
+        self.diff_cache.clear();
         self.search_sidebar_matches.clear();
         if let Ok(all_files) = self.repo.changed_files() {
             let selected_path = self.selected_entry().map(|e| e.path.clone());
@@ -452,6 +458,60 @@ impl App {
         }
     }
 
+}
+
+#[cfg(test)]
+impl App {
+    pub fn test_with_files(files: Vec<FileEntry>) -> App {
+        let repo = GitRepo::open(".").expect("repo should open");
+        let (staged_files, unstaged_files) = App::partition_files(&files);
+        let initial_section = if !staged_files.is_empty() {
+            SidebarSection::Staged
+        } else {
+            SidebarSection::Unstaged
+        };
+        App {
+            repo,
+            staged_files,
+            unstaged_files,
+            selected_index: 0,
+            sidebar_section: initial_section,
+            diff_content: None,
+            diff_scroll: 0,
+            focus: Focus::Sidebar,
+            should_quit: false,
+            styled_diff: None,
+            current_hunk_index: None,
+            scroll_positions: HashMap::new(),
+            diff_stale: false,
+            auto_reload: false,
+            status_message: None,
+            sidebar_collapsed: false,
+            pending_discard: None,
+            show_full_file: false,
+            diff_viewport_height: 0,
+            undo: UndoManager::new(),
+            comment_input: String::new(),
+            comment_context: None,
+            mode: AppMode::Normal,
+            diff_cursor: 0,
+            visual_selection: None,
+            visual_cursor: 0,
+            visual_anchor: 0,
+            visual_from_mouse: false,
+            semantic_filter: false,
+            formatting_only_cache: HashMap::new(),
+            diff_cache: HashMap::new(),
+            search_query: String::new(),
+            search_direction: SearchDirection::Forward,
+            search_origin: Focus::Sidebar,
+            search_pattern: None,
+            search_case_sensitive: false,
+            search_matches: Vec::new(),
+            search_sidebar_matches: Vec::new(),
+            search_match_cursor: None,
+        }
+    }
 }
 
 #[cfg(test)]
