@@ -110,7 +110,7 @@ pub fn render_file_list(frame: &mut ratatui::Frame, area: Rect, props: &FileList
             if let Some((pattern, case_sensitive)) = props.search_pattern {
                 spans.extend(split_path_for_search(&entry.path, style, pattern, case_sensitive));
             } else {
-                spans.push(Span::styled(entry.path.clone(), style));
+                spans.push(Span::styled(&entry.path, style));
             }
             ListItem::new(Line::from(spans))
         })

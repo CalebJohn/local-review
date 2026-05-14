@@ -206,8 +206,8 @@ pub fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
     let path = app
         .diff_content
         .as_ref()
-        .map(|dc| dc.path.clone())
-        .unwrap_or_else(|| "Diff".to_string());
+        .map(|dc| dc.path.as_str())
+        .unwrap_or("Diff");
 
     let title = if app.diff_stale {
         Line::from(vec![
