@@ -1,7 +1,27 @@
 use ratatui::crossterm::event::{MouseButton, MouseEvent, MouseEventKind, KeyCode};
 use ratatui::layout::Rect;
 
-use crate::app::{App, Message};
+use crate::app::{App, Focus, Message};
+
+pub fn translate_text_input(focus: Focus, code: KeyCode) -> Option<Message> {
+    match focus {
+        Focus::CommentInput => match code {
+            KeyCode::Char(c) => Some(Message::CommentInputChar(c)),
+            KeyCode::Backspace => Some(Message::CommentInputBackspace),
+            KeyCode::Enter => Some(Message::CommentInputSubmit),
+            KeyCode::Esc => Some(Message::CommentInputCancel),
+            _ => None,
+        },
+        Focus::SearchInput => match code {
+            KeyCode::Char(c) => Some(Message::SearchInputChar(c)),
+            KeyCode::Backspace => Some(Message::SearchInputBackspace),
+            KeyCode::Enter => Some(Message::SearchInputSubmit),
+            KeyCode::Esc => Some(Message::SearchInputCancel),
+            _ => None,
+        },
+        _ => None,
+    }
+}
 
 pub fn translate_diff_common_key(key: KeyCode) -> Option<Message> {
     match key {

@@ -42,7 +42,7 @@ pub fn footer_line<'a>(app: &'a App) -> Line<'a> {
                 spans.extend([Span::styled(" c ", key_style), Span::styled("comment", desc_style), sep.clone()]);
                 spans.extend([Span::styled(" Esc ", key_style), Span::styled("exit", desc_style)]);
             } else {
-                spans.extend([Span::styled(" n/N ", key_style), Span::styled("hunks", desc_style), sep.clone()]);
+                spans.extend([Span::styled(" ]/[ ", key_style), Span::styled("hunks", desc_style), sep.clone()]);
                 if in_staged {
                     spans.extend([Span::styled(" u/U ", key_style), Span::styled("unstage", desc_style), sep.clone()]);
                 } else {
@@ -72,6 +72,17 @@ pub fn footer_line<'a>(app: &'a App) -> Line<'a> {
                 Span::raw("\u{2588}"),
             ]);
         }
+        Focus::SearchInput => {
+            let prompt = match app.search_direction {
+                crate::app::SearchDirection::Forward => "/",
+                crate::app::SearchDirection::Backward => "?",
+            };
+            spans.extend([
+                Span::styled(prompt, Style::default().fg(Color::White)),
+                Span::raw(&app.search_query),
+                Span::raw("\u{2588}"),
+            ]);
+        }
     }
 
     Line::from(spans)
@@ -86,7 +97,7 @@ mod tests {
     use super::*;
     use std::cell::Cell;
     use std::collections::HashMap;
-    use crate::app::{App, AppMode, Focus, SidebarSection};
+    use crate::app::{App, AppMode, Focus, SearchDirection, SidebarSection};
     use crate::git::GitRepo;
     use crate::git::types::{FileEntry, FileStatus};
     use crate::undo::UndoManager;
@@ -132,6 +143,14 @@ mod tests {
             visual_from_mouse: false,
             semantic_filter: false,
             formatting_only_cache: HashMap::new(),
+            search_query: String::new(),
+            search_direction: SearchDirection::Forward,
+            search_origin: Focus::Sidebar,
+            search_pattern: None,
+            search_case_sensitive: false,
+            search_matches: Vec::new(),
+            search_sidebar_matches: Vec::new(),
+            search_match_cursor: None,
         }
     }
 
@@ -177,7 +196,7 @@ mod tests {
         app.focus = Focus::DiffView;
         let line = footer_line(&app);
         let text = span_text(&line);
-        assert!(text.contains("n/N"), "combined hunk nav");
+        assert!(text.contains("]/["), "combined hunk nav");
         assert!(text.contains("s/S"), "combined stage keys");
         assert!(text.contains("d/D"), "combined discard keys");
         assert!(text.contains("visual"), "v visual");
@@ -262,6 +281,28 @@ mod tests {
         let text = span_text(&line);
         assert!(text.contains("comment:"));
         assert!(text.contains("hello"));
+    }
+
+    #[test]
+    fn search_input_forward_shows_slash_prompt() {
+        let mut app = test_app();
+        app.focus = Focus::SearchInput;
+        app.search_direction = SearchDirection::Forward;
+        app.search_query = "foo".to_string();
+        let line = footer_line(&app);
+        let text = span_text(&line);
+        assert!(text.contains("/foo"), "forward search shows /query");
+    }
+
+    #[test]
+    fn search_input_backward_shows_question_prompt() {
+        let mut app = test_app();
+        app.focus = Focus::SearchInput;
+        app.search_direction = SearchDirection::Backward;
+        app.search_query = "bar".to_string();
+        let line = footer_line(&app);
+        let text = span_text(&line);
+        assert!(text.contains("?bar"), "backward search shows ?query");
     }
 
     #[test]

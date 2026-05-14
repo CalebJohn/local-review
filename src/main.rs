@@ -14,7 +14,7 @@ use std::sync::mpsc;
 use std::time::Duration;
 
 use app::{App, AppMode, Focus, Message};
-use input::{translate_diff_common_key, translate_diff_mouse, translate_mouse, translate_visual_key};
+use input::{translate_diff_common_key, translate_diff_mouse, translate_mouse, translate_text_input, translate_visual_key};
 use notify::Watcher;
 
 enum WatchEvent {
@@ -126,18 +126,9 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 _ => {}
                             }
                         }
-                        if app.focus == Focus::CommentInput {
-                            let msg = match key.code {
-                                KeyCode::Char(c) => Some(Message::CommentInputChar(c)),
-                                KeyCode::Backspace => Some(Message::CommentInputBackspace),
-                                KeyCode::Enter => Some(Message::CommentInputSubmit),
-                                KeyCode::Esc => Some(Message::CommentInputCancel),
-                                _ => None,
-                            };
-                            if let Some(msg) = msg {
-                                app.update(msg);
-                                dirty = true;
-                            }
+                        if let Some(msg) = translate_text_input(app.focus, key.code) {
+                            app.update(msg);
+                            dirty = true;
                             continue;
                         }
 
@@ -183,6 +174,10 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                 KeyCode::Char('Z') => Some(Message::Redo),
                                 KeyCode::Tab => Some(Message::SwitchFocus),
                                 KeyCode::Char('w') => Some(Message::ToggleSemanticFilter),
+                                KeyCode::Char('/') => Some(Message::SearchForward),
+                                KeyCode::Char('?') => Some(Message::SearchBackward),
+                                KeyCode::Char('n') => Some(Message::NextMatch),
+                                KeyCode::Char('N') => Some(Message::PrevMatch),
                                 _ => None,
                             },
                             Focus::DiffView => {
@@ -200,8 +195,8 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                         KeyCode::Char(' ') => Some(Message::MoveDown),
                                         KeyCode::Char('J') => Some(Message::MoveDown),
                                         KeyCode::Char('K') => Some(Message::MoveUp),
-                                        KeyCode::Char('n') => Some(Message::NextHunk),
-                                        KeyCode::Char('N') => Some(Message::PrevHunk),
+                                        KeyCode::Char(']') => Some(Message::NextHunk),
+                                        KeyCode::Char('[') => Some(Message::PrevHunk),
                                         KeyCode::Char('s') => Some(Message::StageHunk),
                                         KeyCode::Char('u') => Some(Message::UnstageHunk),
                                         KeyCode::Char('S') => Some(Message::StageFile),
@@ -211,11 +206,15 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                                         KeyCode::Char('c') => Some(Message::StartComment),
                                         KeyCode::Char('v') => Some(Message::EnterVisual),
                                         KeyCode::Char('w') => Some(Message::ToggleSemanticFilter),
+                                        KeyCode::Char('/') => Some(Message::SearchForward),
+                                        KeyCode::Char('?') => Some(Message::SearchBackward),
+                                        KeyCode::Char('n') => Some(Message::NextMatch),
+                                        KeyCode::Char('N') => Some(Message::PrevMatch),
                                                 _ => translate_diff_common_key(key.code),
                                     }
                                 }
                             }
-                            Focus::CommentInput => unreachable!(),
+                            Focus::CommentInput | Focus::SearchInput => unreachable!(),
                         };
                         if let Some(msg) = msg {
                             app.update(msg);

@@ -122,7 +122,7 @@ impl App {
         self.sidebar_collapsed = false;
         self.focus = match self.focus {
             Focus::Sidebar => Focus::DiffView,
-            Focus::DiffView | Focus::CommentInput => Focus::Sidebar,
+            Focus::DiffView | Focus::CommentInput | Focus::SearchInput => Focus::Sidebar,
         };
     }
 

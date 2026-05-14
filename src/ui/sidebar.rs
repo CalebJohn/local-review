@@ -25,43 +25,26 @@ pub fn render_sidebar(
     app: &crate::app::App,
     area: Rect,
 ) {
-    let sidebar_focused = app.focus == crate::app::Focus::Sidebar;
+    let sidebar_focused = app.focus == crate::app::Focus::Sidebar
+        || (app.focus == crate::app::Focus::SearchInput && app.search_origin == crate::app::Focus::Sidebar);
     let (staged_area, unstaged_area) =
         super::sidebar_section_areas(area, app.staged_files.len(), app.unstaged_files.len());
+    let search = app.search_pattern.as_ref().map(|p| (p.as_str(), app.search_case_sensitive));
 
-    render_file_list(
-        frame,
-        staged_area,
-        &FileListProps {
-            files: &app.staged_files,
-            title: "Staged",
-            focused: sidebar_focused && app.sidebar_section == SidebarSection::Staged,
-            selected: if app.sidebar_section == SidebarSection::Staged {
-                Some(app.selected_index)
-            } else {
-                None
-            },
+    for (section, files, area, title) in [
+        (SidebarSection::Staged, app.staged_files.as_slice(), staged_area, "Staged"),
+        (SidebarSection::Unstaged, app.unstaged_files.as_slice(), unstaged_area, "Unstaged"),
+    ] {
+        render_file_list(frame, area, &FileListProps {
+            files,
+            title,
+            focused: sidebar_focused && app.sidebar_section == section,
+            selected: if app.sidebar_section == section { Some(app.selected_index) } else { None },
             formatting_only_cache: &app.formatting_only_cache,
-            section: SidebarSection::Staged,
-        },
-    );
-
-    render_file_list(
-        frame,
-        unstaged_area,
-        &FileListProps {
-            files: &app.unstaged_files,
-            title: "Unstaged",
-            focused: sidebar_focused && app.sidebar_section == SidebarSection::Unstaged,
-            selected: if app.sidebar_section == SidebarSection::Unstaged {
-                Some(app.selected_index)
-            } else {
-                None
-            },
-            formatting_only_cache: &app.formatting_only_cache,
-            section: SidebarSection::Unstaged,
-        },
-    );
+            section,
+            search_pattern: search,
+        });
+    }
 }
 
 pub struct FileListProps<'a> {
@@ -71,6 +54,41 @@ pub struct FileListProps<'a> {
     pub selected: Option<usize>,
     pub formatting_only_cache: &'a HashMap<(String, SidebarSection), bool>,
     pub section: SidebarSection,
+    pub search_pattern: Option<(&'a str, bool)>,
+}
+
+fn split_path_for_search<'a>(
+    path: &str,
+    base_style: Style,
+    pattern: &str,
+    case_sensitive: bool,
+) -> Vec<Span<'a>> {
+    let highlight_style = Style::default().bg(Color::Yellow).fg(Color::Black);
+    let match_positions: Vec<(usize, usize)> = if case_sensitive {
+        path.match_indices(pattern)
+            .map(|(i, m)| (i, i + m.len()))
+            .collect()
+    } else {
+        super::case_insensitive_match_ranges(path, pattern)
+    };
+
+    if match_positions.is_empty() {
+        return vec![Span::styled(path.to_string(), base_style)];
+    }
+
+    let mut spans = Vec::new();
+    let mut last = 0;
+    for (start, end) in match_positions {
+        if start > last {
+            spans.push(Span::styled(path[last..start].to_string(), base_style));
+        }
+        spans.push(Span::styled(path[start..end].to_string(), highlight_style));
+        last = end;
+    }
+    if last < path.len() {
+        spans.push(Span::styled(path[last..].to_string(), base_style));
+    }
+    spans
 }
 
 pub fn render_file_list(frame: &mut ratatui::Frame, area: Rect, props: &FileListProps) {
@@ -88,11 +106,13 @@ pub fn render_file_list(frame: &mut ratatui::Frame, area: Rect, props: &FileList
             if is_formatting_only {
                 style = style.add_modifier(Modifier::DIM);
             }
-            let line = Line::from(vec![
-                Span::styled(format!("{} ", status), style),
-                Span::styled(entry.path.clone(), style),
-            ]);
-            ListItem::new(line)
+            let mut spans = vec![Span::styled(format!("{} ", status), style)];
+            if let Some((pattern, case_sensitive)) = props.search_pattern {
+                spans.extend(split_path_for_search(&entry.path, style, pattern, case_sensitive));
+            } else {
+                spans.push(Span::styled(entry.path.clone(), style));
+            }
+            ListItem::new(Line::from(spans))
         })
         .collect();
 

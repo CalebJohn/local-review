@@ -66,6 +66,14 @@
             visual_from_mouse: false,
             semantic_filter: false,
             formatting_only_cache: HashMap::new(),
+            search_query: String::new(),
+            search_direction: SearchDirection::Forward,
+            search_origin: Focus::Sidebar,
+            search_pattern: None,
+            search_case_sensitive: false,
+            search_matches: Vec::new(),
+            search_sidebar_matches: Vec::new(),
+            search_match_cursor: None,
         }
     }
 
@@ -1346,4 +1354,62 @@
 
         app.refresh_file_list();
         assert!(!app.formatting_only_cache.contains_key(&("unstaged.rs".to_string(), SidebarSection::Unstaged)));
+    }
+
+    // ---- search lifecycle tests ----
+
+    #[test]
+    fn test_file_switch_clears_diff_matches_preserves_pattern() {
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
+        ]);
+        app.search_pattern = Some("test".to_string());
+        app.search_matches = vec![0, 3, 5];
+        app.search_match_cursor = Some(1);
+
+        app.update(Message::MoveDown);
+
+        assert!(app.search_matches.is_empty(), "diff matches should be cleared on file switch");
+        assert!(app.search_match_cursor.is_none(), "match cursor should be cleared on file switch");
+        assert_eq!(app.search_pattern, Some("test".to_string()), "pattern should be preserved");
+    }
+
+    #[test]
+    fn test_sidebar_matches_cleared_on_refresh() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.search_sidebar_matches = vec![(SidebarSection::Unstaged, 0)];
+
+        app.refresh_file_list();
+
+        assert!(app.search_sidebar_matches.is_empty(), "sidebar matches should be cleared on refresh");
+    }
+
+    #[test]
+    fn test_next_match_recomputes_after_clear() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.diff_content = Some(make_dc(vec![DiffHunk {
+            old_start: 1,
+            new_start: 1,
+            lines: vec![
+                dl(ChangeKind::Insert, None, Some(1)),
+                dl(ChangeKind::Equal, Some(2), Some(2)),
+            ],
+            has_header: true,
+            header_context: None,
+        }]));
+        app.search_pattern = Some("x".to_string());
+        app.search_case_sensitive = false;
+        app.search_matches.clear();
+        app.search_match_cursor = None;
+
+        app.update(Message::NextMatch);
+
+        assert!(!app.search_matches.is_empty(), "matches should be recomputed lazily");
+        assert!(app.search_match_cursor.is_some(), "cursor should advance to first match");
     }

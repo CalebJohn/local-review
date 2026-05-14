@@ -12,13 +12,14 @@ use crate::undo::UndoManager;
 mod comment;
 mod geometry;
 mod navigation;
+mod search;
 mod staging;
 mod visual;
 pub use comment::CommentContext;
 pub use geometry::{diff_line_at_row, row_for_diff_line};
 pub(crate) use geometry::nearest_row_for_line;
 
-const NO_ACTIVE_HUNK_MSG: &str = "No active hunk in view — press n to navigate to a hunk";
+const NO_ACTIVE_HUNK_MSG: &str = "No active hunk in view — press ] to navigate to a hunk";
 const SCROLL_MARGIN: u16 = 3;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -26,6 +27,13 @@ pub enum Focus {
     Sidebar,
     DiffView,
     CommentInput,
+    SearchInput,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SearchDirection {
+    Forward,
+    Backward,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -34,7 +42,7 @@ pub enum AppMode {
     Visual,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum SidebarSection {
     Staged,
     Unstaged,
@@ -92,6 +100,14 @@ pub enum Message {
     StageSelectedLines,
     UnstageSelectedLines,
     ToggleSemanticFilter,
+    SearchForward,
+    SearchBackward,
+    SearchInputChar(char),
+    SearchInputBackspace,
+    SearchInputSubmit,
+    SearchInputCancel,
+    NextMatch,
+    PrevMatch,
 }
 
 pub struct App {
@@ -125,6 +141,14 @@ pub struct App {
     pub visual_from_mouse: bool,
     pub semantic_filter: bool,
     pub formatting_only_cache: HashMap<(String, SidebarSection), bool>,
+    pub search_query: String,
+    pub search_direction: SearchDirection,
+    pub search_origin: Focus,
+    pub search_pattern: Option<String>,
+    pub search_case_sensitive: bool,
+    pub search_matches: Vec<usize>,
+    pub search_sidebar_matches: Vec<(SidebarSection, usize)>,
+    pub search_match_cursor: Option<usize>,
 }
 
 impl App {
@@ -170,6 +194,14 @@ impl App {
             visual_from_mouse: false,
             semantic_filter: false,
             formatting_only_cache: HashMap::new(),
+            search_query: String::new(),
+            search_direction: SearchDirection::Forward,
+            search_origin: Focus::Sidebar,
+            search_pattern: None,
+            search_case_sensitive: false,
+            search_matches: Vec::new(),
+            search_sidebar_matches: Vec::new(),
+            search_match_cursor: None,
         };
         if !app.current_section_files().is_empty() {
             app.load_diff_for_selected();
@@ -219,8 +251,11 @@ impl App {
         self.styled_diff = None;
         self.diff_stale = false;
         self.mode = AppMode::Normal;
+        self.diff_cursor = 0;
         self.visual_selection.clear();
         self.visual_from_mouse = false;
+        self.search_matches.clear();
+        self.search_match_cursor = None;
 
         let files = self.current_section_files();
         if self.selected_index >= files.len() {
@@ -318,6 +353,7 @@ impl App {
 
     pub(super) fn refresh_file_list(&mut self) {
         self.formatting_only_cache.clear();
+        self.search_sidebar_matches.clear();
         if let Ok(all_files) = self.repo.changed_files() {
             let selected_path = self.selected_entry().map(|e| e.path.clone());
             let old_section = self.sidebar_section;
@@ -406,6 +442,14 @@ impl App {
             Message::StageSelectedLines => self.handle_stage_selected_lines(),
             Message::UnstageSelectedLines => self.handle_unstage_selected_lines(),
             Message::ToggleSemanticFilter => { self.semantic_filter = !self.semantic_filter; }
+            Message::SearchForward => self.handle_search_forward(),
+            Message::SearchBackward => self.handle_search_backward(),
+            Message::SearchInputChar(c) => self.handle_search_input_char(c),
+            Message::SearchInputBackspace => self.handle_search_input_backspace(),
+            Message::SearchInputSubmit => self.handle_search_input_submit(),
+            Message::SearchInputCancel => self.handle_search_input_cancel(),
+            Message::NextMatch => self.handle_next_match(),
+            Message::PrevMatch => self.handle_prev_match(),
         }
     }
 
