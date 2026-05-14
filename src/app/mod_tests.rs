@@ -157,6 +157,160 @@
         assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
     }
 
+    // ---- circular wrap-around tests ----
+
+    #[test]
+    fn test_move_down_wraps_within_unstaged_when_no_staged() {
+        let mut app = test_app_with_files(vec![
+            unstaged_entry(),
+            FileEntry {
+                path: "unstaged2.rs".to_string(),
+                index_status: None,
+                workdir_status: Some(FileStatus::Modified),
+            },
+        ]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+        assert_eq!(app.selected_index, 0);
+        // Move to last item
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 1);
+        // Move down again — should wrap to top
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+    }
+
+    #[test]
+    fn test_move_down_wraps_within_staged_when_no_unstaged() {
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
+        ]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        // Move to last item
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 1);
+        // Move down again — should wrap to top
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+    }
+
+    #[test]
+    fn test_move_up_wraps_within_unstaged_when_no_staged() {
+        let mut app = test_app_with_files(vec![
+            unstaged_entry(),
+            FileEntry {
+                path: "unstaged2.rs".to_string(),
+                index_status: None,
+                workdir_status: Some(FileStatus::Modified),
+            },
+        ]);
+        app.focus = Focus::DiffView;
+        app.selected_index = 1;
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+        // Move to top
+        app.update(Message::MoveUp);
+        assert_eq!(app.selected_index, 0);
+        // Move up again — should wrap to bottom
+        app.update(Message::MoveUp);
+        assert_eq!(app.selected_index, 1);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+    }
+
+    #[test]
+    fn test_move_up_does_not_wrap_within_staged_when_no_unstaged() {
+        // Intentional asymmetry: move_up at top of staged stays put
+        // even when there are no unstaged files to transition to.
+        let mut app = test_app_with_files(vec![
+            staged_only_entry(),
+            FileEntry {
+                path: "staged2.rs".to_string(),
+                index_status: Some(FileStatus::Added),
+                workdir_status: None,
+            },
+        ]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        assert_eq!(app.selected_index, 0);
+        app.update(Message::MoveUp);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+    }
+
+    #[test]
+    fn test_move_up_transitions_to_staged_instead_of_wrapping() {
+        // When staged files exist, move_up at top of unstaged transitions
+        // to staged rather than wrapping within unstaged.
+        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        app.sidebar_section = SidebarSection::Unstaged;
+        app.selected_index = 0;
+        app.update(Message::MoveUp);
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_move_down_crosses_to_unstaged_instead_of_wrapping() {
+        // When unstaged files exist, move_down at bottom of staged transitions
+        // to unstaged rather than wrapping within staged.
+        let mut app = test_app_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.sidebar_section, SidebarSection::Staged);
+        app.update(Message::MoveDown);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_move_down_single_file_wraps() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.selected_index, 0);
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+    }
+
+    #[test]
+    fn test_move_up_single_file_wraps() {
+        let mut app = test_app_with_files(vec![unstaged_entry()]);
+        app.focus = Focus::DiffView;
+        assert_eq!(app.selected_index, 0);
+        app.update(Message::MoveUp);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
+    }
+
+    #[test]
+    fn test_circular_wrap_saves_scroll_position() {
+        let mut app = test_app_with_files(vec![
+            unstaged_entry(),
+            FileEntry {
+                path: "unstaged2.rs".to_string(),
+                index_status: None,
+                workdir_status: Some(FileStatus::Modified),
+            },
+        ]);
+        app.focus = Focus::DiffView;
+        app.selected_index = 1;
+        app.diff_scroll = 30;
+        // Move down wraps from last to first — should save scroll
+        app.update(Message::MoveDown);
+        assert_eq!(app.selected_index, 0);
+        assert_eq!(app.diff_scroll, 0);
+        // Verify scroll was saved for index 1
+        let key = ("unstaged2.rs".to_string(), SidebarSection::Unstaged, false);
+        assert_eq!(app.scroll_positions.get(&key), Some(&30));
+    }
+
     #[test]
     fn test_update_quit() {
         let mut app = test_app_with_files(vec![]);

@@ -15,6 +15,11 @@ impl App {
             self.sidebar_section = SidebarSection::Staged;
             self.selected_index = self.staged_files.len() - 1;
             self.load_diff_for_selected();
+        } else if !self.unstaged_files.is_empty() {
+            self.save_scroll_position();
+            self.sidebar_section = SidebarSection::Unstaged;
+            self.selected_index = self.unstaged_files.len() - 1;
+            self.load_diff_for_selected();
         }
     }
 
@@ -30,6 +35,11 @@ impl App {
         {
             self.save_scroll_position();
             self.sidebar_section = SidebarSection::Unstaged;
+            self.selected_index = 0;
+            self.load_diff_for_selected();
+        }
+        else if section_len > 0 {
+            self.save_scroll_position();
             self.selected_index = 0;
             self.load_diff_for_selected();
         }

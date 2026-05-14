@@ -541,7 +541,6 @@ mod tests {
 
     #[test]
     fn test_stale_cursor_reset_prevents_oob_forward() {
-        let stale_cursor = Some(5);
         let new_matches_len = 2;
 
         // Forward wraps modularly: (5+1)%2 = 0, which happens to be valid,
