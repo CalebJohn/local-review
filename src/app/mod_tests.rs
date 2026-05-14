@@ -54,7 +54,7 @@
             sidebar_collapsed: false,
             pending_discard: None,
             show_full_file: false,
-            diff_viewport_height: Cell::new(0),
+            diff_viewport_height: 0,
             undo: UndoManager::new(),
             comment_input: String::new(),
             comment_context: None,

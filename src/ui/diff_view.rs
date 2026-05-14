@@ -243,8 +243,6 @@ pub fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             frame.render_widget(paragraph, area);
         }
         Some(dc) => {
-            let inner = block.inner(area);
-            app.diff_viewport_height.set(inner.height);
             let search = app.search_pattern.as_ref().map(|p| (p.as_str(), app.search_case_sensitive));
             let lines = diff_lines(dc, app.styled_diff.as_ref(), app.current_hunk_index, app.visual_selection, app.diff_cursor, &app.mode, app.semantic_filter, search);
             if lines.is_empty() && app.semantic_filter {

@@ -60,6 +60,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     result
 }
 
+fn diff_viewport_height(height: u16) -> u16 {
+    // view() layout: vertical [Min(1), Length(1)] — footer is 1 row, rest is diff/sidebar.
+    // The diff block has a 1-cell border on each side, so inner height = height - 3.
+    height.saturating_sub(3)
+}
+
 fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error::Error>> {
     let mut app = App::new()?;
 
@@ -100,6 +106,7 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
     loop {
         if dirty {
             terminal.draw(|frame| ui::view(frame, &app))?;
+            app.diff_viewport_height = diff_viewport_height(terminal.size()?.height);
             dirty = false;
         }
 

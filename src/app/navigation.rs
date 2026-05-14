@@ -83,7 +83,7 @@ impl App {
         if self.diff_cursor < max_line {
             self.diff_cursor += 1;
         }
-        let viewport_height = self.diff_viewport_height.get() as usize;
+        let viewport_height = self.diff_viewport_height as usize;
         let cursor_row = self.cursor_row();
         let margin = SCROLL_MARGIN as usize;
         if viewport_height > margin && cursor_row >= self.diff_scroll as usize + viewport_height - margin {
@@ -120,7 +120,7 @@ impl App {
         self.status_message = None;
         let max_line = self.total_content_lines().saturating_sub(1);
         self.diff_cursor = max_line;
-        let viewport_height = self.diff_viewport_height.get() as usize;
+        let viewport_height = self.diff_viewport_height as usize;
         let total_lines = self.total_diff_lines();
         let max_scroll = total_lines.saturating_sub(viewport_height).saturating_add(SCROLL_MARGIN.into()) as u16;
         self.diff_scroll = max_scroll.min(total_lines.saturating_sub(1) as u16);

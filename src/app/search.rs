@@ -238,7 +238,7 @@ impl App {
         let content_line = self.search_matches[match_idx];
         self.diff_cursor = content_line;
         let cursor_row = self.cursor_row();
-        let viewport = self.diff_viewport_height.get() as usize;
+        let viewport = self.diff_viewport_height as usize;
         if viewport > 0
             && (cursor_row < self.diff_scroll as usize
                 || cursor_row >= self.diff_scroll as usize + viewport)

@@ -1,4 +1,3 @@
-use std::cell::Cell;
 use std::collections::HashMap;
 
 use crate::classify::{classify_diff, language_for_extension};
@@ -129,7 +128,7 @@ pub struct App {
     pub sidebar_collapsed: bool,
     pub pending_discard: Option<PendingDiscard>,
     pub show_full_file: bool,
-    pub diff_viewport_height: Cell<u16>,
+    pub diff_viewport_height: u16,
     pub undo: UndoManager,
     pub comment_input: String,
     pub comment_context: Option<CommentContext>,
@@ -182,7 +181,7 @@ impl App {
             sidebar_collapsed: false,
             pending_discard: None,
             show_full_file: false,
-            diff_viewport_height: Cell::new(0),
+            diff_viewport_height: 0,
             undo: UndoManager::new(),
             comment_input: String::new(),
             comment_context: None,
