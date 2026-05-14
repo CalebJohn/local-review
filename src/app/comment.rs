@@ -70,7 +70,7 @@ impl App {
             self.status_message = Some("No file selected".to_string());
             return;
         };
-        let selected_lines = if self.mode == AppMode::Visual && !self.visual_selection.is_empty() {
+        let selected_lines = if self.mode == AppMode::Visual && self.visual_selection.is_some() {
             if let Some(dc) = self.diff_content.as_ref() {
                 if let Some(hunk) = dc.hunks.get(hunk_idx) {
                     let local = self.local_selected_lines(dc, hunk_idx, hunk);
@@ -111,7 +111,7 @@ impl App {
             }
             if ctx.selected_lines.is_some() {
                 self.mode = AppMode::Normal;
-                self.visual_selection.clear();
+                self.visual_selection = None;
             }
         }
         self.comment_input.clear();

@@ -107,7 +107,7 @@ pub fn diff_lines(
     diff: &DiffContent,
     styled: Option<&StyledDiffContent>,
     current_hunk_index: Option<usize>,
-    visual_selection: &[usize],
+    visual_selection: Option<(usize, usize)>,
     diff_cursor: usize,
     mode: &AppMode,
     semantic_filter: bool,
@@ -132,9 +132,9 @@ pub fn diff_lines(
                 ChangeKind::Delete => ("-", Style::default().fg(Color::Red)),
             };
 
-            let is_selected = match (visual_selection.first(), visual_selection.last()) {
-                (Some(&start), Some(&end)) => global_line_idx >= start && global_line_idx <= end,
-                _ => false,
+            let is_selected = match visual_selection {
+                Some((start, end)) => global_line_idx >= start && global_line_idx <= end,
+                None => false,
             };
             let is_cursor = mode == &AppMode::Normal && global_line_idx == diff_cursor;
             let gutter_style = if is_selected {
@@ -246,7 +246,7 @@ pub fn render_diff_view(frame: &mut ratatui::Frame, app: &App, area: Rect) {
             let inner = block.inner(area);
             app.diff_viewport_height.set(inner.height);
             let search = app.search_pattern.as_ref().map(|p| (p.as_str(), app.search_case_sensitive));
-            let lines = diff_lines(dc, app.styled_diff.as_ref(), app.current_hunk_index, &app.visual_selection, app.diff_cursor, &app.mode, app.semantic_filter, search);
+            let lines = diff_lines(dc, app.styled_diff.as_ref(), app.current_hunk_index, app.visual_selection, app.diff_cursor, &app.mode, app.semantic_filter, search);
             if lines.is_empty() && app.semantic_filter {
                 let paragraph = Paragraph::new(Line::from(Span::styled(
                     "All changes are formatting-only",

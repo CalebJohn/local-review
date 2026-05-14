@@ -60,7 +60,7 @@
             comment_context: None,
             mode: AppMode::Normal,
             diff_cursor: 0,
-            visual_selection: Vec::new(),
+            visual_selection: None,
             visual_cursor: 0,
             visual_anchor: 0,
             visual_from_mouse: false,
@@ -1082,7 +1082,7 @@
         }]));
         app.update(Message::EnterVisual);
         assert_eq!(app.mode, AppMode::Visual);
-        assert!(!app.visual_selection.is_empty());
+        assert!(app.visual_selection.is_some());
     }
 
     #[test]
@@ -1092,7 +1092,7 @@
         app.mode = AppMode::Normal;
         app.update(Message::EnterVisual);
         assert_eq!(app.mode, AppMode::Normal);
-        assert!(app.visual_selection.is_empty());
+        assert!(app.visual_selection.is_none());
     }
 
     #[test]
@@ -1100,19 +1100,19 @@
         let mut app = test_app_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.mode = AppMode::Visual;
-        app.visual_selection = vec![0, 1];
+        app.visual_selection = Some((0, 1));
         app.update(Message::EnterVisual);
-        assert_eq!(app.visual_selection, vec![0, 1]);
+        assert_eq!(app.visual_selection, Some((0, 1)));
     }
 
     #[test]
     fn test_exit_visual_clears_selection() {
         let mut app = test_app_with_files(vec![]);
         app.mode = AppMode::Visual;
-        app.visual_selection = vec![0, 1, 2];
+        app.visual_selection = Some((0, 2));
         app.update(Message::ExitVisual);
         assert_eq!(app.mode, AppMode::Normal);
-        assert!(app.visual_selection.is_empty());
+        assert!(app.visual_selection.is_none());
     }
 
     #[test]
@@ -1141,10 +1141,10 @@
         }]));
         app.update(Message::ExtendSelectionDown);
         assert_eq!(app.visual_cursor, 1);
-        assert_eq!(app.visual_selection, vec![0, 1]);
+        assert_eq!(app.visual_selection, Some((0, 1)));
         app.update(Message::ExtendSelectionDown);
         assert_eq!(app.visual_cursor, 2);
-        assert_eq!(app.visual_selection, vec![0, 1, 2]);
+        assert_eq!(app.visual_selection, Some((0, 2)));
     }
 
     #[test]
@@ -1165,10 +1165,10 @@
         }]));
         app.update(Message::ExtendSelectionUp);
         assert_eq!(app.visual_cursor, 1);
-        assert_eq!(app.visual_selection, vec![1, 2]);
+        assert_eq!(app.visual_selection, Some((1, 2)));
         app.update(Message::ExtendSelectionUp);
         assert_eq!(app.visual_cursor, 0);
-        assert_eq!(app.visual_selection, vec![0, 1, 2]);
+        assert_eq!(app.visual_selection, Some((0, 2)));
     }
 
     #[test]
@@ -1185,7 +1185,7 @@
         }]));
         app.update(Message::ExtendSelectionUp);
         assert_eq!(app.visual_cursor, 0);
-        assert_eq!(app.visual_selection, vec![0]);
+        assert_eq!(app.visual_selection, Some((0, 0)));
     }
 
     #[test]
@@ -1229,7 +1229,7 @@
         app.diff_content = None;
         app.update(Message::ExtendSelectionDown);
         assert_eq!(app.visual_cursor, 0);
-        assert!(app.visual_selection.is_empty());
+        assert!(app.visual_selection.is_none());
     }
 
     #[test]
@@ -1241,7 +1241,7 @@
         app.diff_content = None;
         app.update(Message::ExtendSelectionUp);
         assert_eq!(app.visual_cursor, 2);
-        assert!(app.visual_selection.is_empty());
+        assert!(app.visual_selection.is_none());
     }
 
     // ---- semantic filter tests (Task 6) ----

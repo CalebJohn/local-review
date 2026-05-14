@@ -137,7 +137,7 @@ mod tests {
             comment_context: None,
             mode: AppMode::Normal,
             diff_cursor: 0,
-            visual_selection: Vec::new(),
+            visual_selection: None,
             visual_cursor: 0,
             visual_anchor: 0,
             visual_from_mouse: false,

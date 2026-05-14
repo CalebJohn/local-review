@@ -135,7 +135,7 @@ pub struct App {
     pub comment_context: Option<CommentContext>,
     pub mode: AppMode,
     pub diff_cursor: usize,
-    pub visual_selection: Vec<usize>,
+    pub visual_selection: Option<(usize, usize)>,
     pub visual_cursor: usize,
     pub visual_anchor: usize,
     pub visual_from_mouse: bool,
@@ -188,7 +188,7 @@ impl App {
             comment_context: None,
             mode: AppMode::Normal,
             diff_cursor: 0,
-            visual_selection: Vec::new(),
+            visual_selection: None,
             visual_cursor: 0,
             visual_anchor: 0,
             visual_from_mouse: false,
@@ -252,7 +252,7 @@ impl App {
         self.diff_stale = false;
         self.mode = AppMode::Normal;
         self.diff_cursor = 0;
-        self.visual_selection.clear();
+        self.visual_selection = None;
         self.visual_from_mouse = false;
         self.search_matches.clear();
         self.search_match_cursor = None;

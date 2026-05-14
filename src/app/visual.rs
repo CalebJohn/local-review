@@ -10,7 +10,7 @@ impl App {
         self.mode = AppMode::Visual;
         self.visual_cursor = self.diff_cursor;
         self.visual_anchor = self.diff_cursor;
-        self.visual_selection = vec![self.diff_cursor];
+        self.visual_selection = Some((self.diff_cursor, self.diff_cursor));
         self.visual_from_mouse = false;
     }
 
@@ -19,7 +19,7 @@ impl App {
             return;
         }
         self.mode = AppMode::Normal;
-        self.visual_selection.clear();
+        self.visual_selection = None;
         self.visual_from_mouse = false;
     }
 
@@ -32,7 +32,7 @@ impl App {
         if self.mode == AppMode::Visual {
             self.visual_anchor = target;
             self.visual_cursor = target;
-            self.visual_selection = vec![target];
+            self.visual_selection = Some((target, target));
             self.visual_from_mouse = true;
         }
         self.diff_cursor = target;
@@ -92,13 +92,13 @@ impl App {
     pub(super) fn update_visual_selection(&mut self) {
         let start = self.visual_anchor.min(self.visual_cursor);
         let end = self.visual_anchor.max(self.visual_cursor);
-        self.visual_selection = (start..=end).collect();
+        self.visual_selection = Some((start, end));
     }
 
     pub(super) fn local_selected_lines(&self, dc: &DiffContent, hunk_idx: usize, hunk: &DiffHunk) -> Vec<usize> {
         let hunk_line_offset: usize = dc.hunks.iter().take(hunk_idx).map(|h| h.lines.len()).sum();
         let hunk_end = hunk_line_offset + hunk.lines.len();
-        let (Some(&sel_start), Some(&sel_end)) = (self.visual_selection.first(), self.visual_selection.last()) else {
+        let Some((sel_start, sel_end)) = self.visual_selection else {
             return Vec::new();
         };
         let start = sel_start.max(hunk_line_offset);

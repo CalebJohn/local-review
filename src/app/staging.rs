@@ -184,7 +184,7 @@ impl App {
         if self.mode != AppMode::Visual || self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
             return;
         }
-        if self.visual_selection.is_empty() {
+        if self.visual_selection.is_none() {
             self.status_message = Some("No lines selected — use v to enter visual mode, j/k to select".to_string());
             return;
         }
@@ -207,7 +207,7 @@ impl App {
                     if let Err(e) = self.undo.record(&self.repo, "stage selected lines", std::slice::from_ref(&entry.path)) {
                         self.status_message = Some(format!("Stage failed: {}", e));
                         self.mode = AppMode::Normal;
-                        self.visual_selection.clear();
+                        self.visual_selection = None;
                         self.refresh_files();
                         return;
                     }
@@ -216,7 +216,7 @@ impl App {
                         self.undo.discard_last();
                     }
                     self.mode = AppMode::Normal;
-                    self.visual_selection.clear();
+                    self.visual_selection = None;
                     self.save_scroll_position();
                     self.refresh_files();
                     self.restore_hunk_position(hunk_idx);
@@ -229,7 +229,7 @@ impl App {
         if self.mode != AppMode::Visual || self.sidebar_section != SidebarSection::Staged || self.diff_stale {
             return;
         }
-        if self.visual_selection.is_empty() {
+        if self.visual_selection.is_none() {
             self.status_message = Some("No lines selected — use v to enter visual mode, j/k to select".to_string());
             return;
         }
@@ -252,7 +252,7 @@ impl App {
                     if let Err(e) = self.undo.record(&self.repo, "unstage selected lines", std::slice::from_ref(&entry.path)) {
                         self.status_message = Some(format!("Unstage failed: {}", e));
                         self.mode = AppMode::Normal;
-                        self.visual_selection.clear();
+                        self.visual_selection = None;
                         self.refresh_files();
                         return;
                     }
@@ -261,7 +261,7 @@ impl App {
                         self.undo.discard_last();
                     }
                     self.mode = AppMode::Normal;
-                    self.visual_selection.clear();
+                    self.visual_selection = None;
                     self.save_scroll_position();
                     self.refresh_files();
                     self.restore_hunk_position(hunk_idx);
