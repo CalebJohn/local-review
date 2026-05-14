@@ -24,6 +24,7 @@ pub struct DiffHunk {
     /// hunks in full-file view. The renderer omits the `@@` header for fillers
     /// and navigation/staging skip them.
     pub has_header: bool,
+    pub header_context: Option<String>,
 }
 
 impl DiffHunk {
@@ -91,6 +92,7 @@ mod tests {
                 make_line(ChangeKind::Delete, true),
             ],
             has_header: true,
+            header_context: None,
         };
         assert!(hunk.is_formatting_only());
     }
@@ -106,6 +108,7 @@ mod tests {
                 make_line(ChangeKind::Delete, true),
             ],
             has_header: true,
+            header_context: None,
         };
         assert!(!hunk.is_formatting_only());
     }
@@ -120,6 +123,7 @@ mod tests {
                 make_line(ChangeKind::Equal, false),
             ],
             has_header: true,
+            header_context: None,
         };
         // No changed lines, so vacuously all non-Equal lines have formatting_only=true
         assert!(hunk.is_formatting_only());
@@ -135,6 +139,7 @@ mod tests {
                 make_line(ChangeKind::Delete, false),
             ],
             has_header: true,
+            header_context: None,
         };
         assert!(hunk.is_mixed());
     }
@@ -149,6 +154,7 @@ mod tests {
                 make_line(ChangeKind::Delete, true),
             ],
             has_header: true,
+            header_context: None,
         };
         assert!(!hunk.is_mixed());
     }
@@ -163,6 +169,7 @@ mod tests {
                 make_line(ChangeKind::Delete, false),
             ],
             has_header: true,
+            header_context: None,
         };
         assert!(!hunk.is_mixed());
     }
@@ -176,6 +183,7 @@ mod tests {
                 make_line(ChangeKind::Equal, false),
             ],
             has_header: true,
+            header_context: None,
         };
         assert!(!hunk.is_mixed());
     }

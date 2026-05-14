@@ -3,6 +3,8 @@ pub mod types;
 use similar::{ChangeTag, TextDiff};
 use types::{ChangeKind, DiffContent, DiffHunk, DiffLine};
 
+use crate::context::expand_hunks;
+
 /// Compute structured diff hunks from two text inputs.
 ///
 /// Uses `similar::TextDiff::from_lines` with grouped_ops to produce
@@ -64,6 +66,7 @@ pub fn compute_hunks(old: &str, new: &str, context_lines: usize) -> Vec<DiffHunk
             new_start,
             lines,
             has_header: true,
+            header_context: None,
         });
     }
 
@@ -78,6 +81,12 @@ pub fn compute_diff_content(path: &str, old_content: Option<&str>, new_content: 
     let old = old_content.unwrap_or("");
     let new = new_content.unwrap_or("");
     let hunks = compute_hunks(old, new, 3);
+
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str());
+    let hunks = expand_hunks(hunks, old, new, ext);
+
     DiffContent {
         path: path.to_string(),
         hunks,
@@ -143,6 +152,7 @@ pub fn compute_full_hunks(old: &str, new: &str) -> Vec<DiffHunk> {
                 new_start,
                 lines,
                 has_header: false,
+                header_context: None,
             }
         };
 

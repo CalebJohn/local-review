@@ -22,51 +22,54 @@ pub fn registry() -> &'static HighlightRegistry {
 
 impl HighlightRegistry {
     fn build_all() -> Self {
+        use super::language_for_name;
+
+        let lang = |name: &str| language_for_name(name).expect("supported language");
         let mut by_lang = HashMap::new();
         by_lang.insert("rust", build("rust",
-            tree_sitter_rust::LANGUAGE.into(),
+            lang("rust"),
             tree_sitter_rust::HIGHLIGHTS_QUERY,
             tree_sitter_rust::INJECTIONS_QUERY,
             ""));
         by_lang.insert("typescript", build("typescript",
-            tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            lang("typescript"),
             tree_sitter_typescript::HIGHLIGHTS_QUERY,
             "", tree_sitter_typescript::LOCALS_QUERY));
         by_lang.insert("tsx", build("tsx",
-            tree_sitter_typescript::LANGUAGE_TSX.into(),
+            lang("tsx"),
             tree_sitter_typescript::HIGHLIGHTS_QUERY,
             "", tree_sitter_typescript::LOCALS_QUERY));
-by_lang.insert("javascript", build("javascript",
-                tree_sitter_javascript::LANGUAGE.into(),
-                tree_sitter_javascript::HIGHLIGHT_QUERY,
-                tree_sitter_javascript::INJECTIONS_QUERY,
-                tree_sitter_javascript::LOCALS_QUERY));
+        by_lang.insert("javascript", build("javascript",
+            lang("javascript"),
+            tree_sitter_javascript::HIGHLIGHT_QUERY,
+            tree_sitter_javascript::INJECTIONS_QUERY,
+            tree_sitter_javascript::LOCALS_QUERY));
         by_lang.insert("python", build("python",
-            tree_sitter_python::LANGUAGE.into(),
+            lang("python"),
             tree_sitter_python::HIGHLIGHTS_QUERY,
             "", ""));
         by_lang.insert("go", build("go",
-            tree_sitter_go::LANGUAGE.into(),
+            lang("go"),
             tree_sitter_go::HIGHLIGHTS_QUERY,
             "", ""));
         by_lang.insert("c", build("c",
-            tree_sitter_c::LANGUAGE.into(),
+            lang("c"),
             tree_sitter_c::HIGHLIGHT_QUERY,
             "", ""));
         by_lang.insert("cpp", build("cpp",
-            tree_sitter_cpp::LANGUAGE.into(),
+            lang("cpp"),
             tree_sitter_cpp::HIGHLIGHT_QUERY,
             "", ""));
         by_lang.insert("json", build("json",
-            tree_sitter_json::LANGUAGE.into(),
+            lang("json"),
             tree_sitter_json::HIGHLIGHTS_QUERY,
             "", ""));
         by_lang.insert("yaml", build("yaml",
-            tree_sitter_yaml::LANGUAGE.into(),
+            lang("yaml"),
             tree_sitter_yaml::HIGHLIGHTS_QUERY,
             "", ""));
         by_lang.insert("toml", build("toml",
-            tree_sitter_toml_ng::LANGUAGE.into(),
+            lang("toml"),
             tree_sitter_toml_ng::HIGHLIGHTS_QUERY,
             "", ""));
         Self { by_lang }

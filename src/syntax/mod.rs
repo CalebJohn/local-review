@@ -22,6 +22,23 @@ pub fn highlight_source(source: &str, extension: Option<&str>) -> Option<Vec<Sty
     mapping::highlight_source_inner(source, extension)
 }
 
+pub fn language_for_name(lang_name: &str) -> Option<tree_sitter::Language> {
+    match lang_name {
+        "rust" => Some(tree_sitter_rust::LANGUAGE.into()),
+        "typescript" => Some(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
+        "tsx" => Some(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        "javascript" => Some(tree_sitter_javascript::LANGUAGE.into()),
+        "python" => Some(tree_sitter_python::LANGUAGE.into()),
+        "go" => Some(tree_sitter_go::LANGUAGE.into()),
+        "c" => Some(tree_sitter_c::LANGUAGE.into()),
+        "cpp" => Some(tree_sitter_cpp::LANGUAGE.into()),
+        "json" => Some(tree_sitter_json::LANGUAGE.into()),
+        "yaml" => Some(tree_sitter_yaml::LANGUAGE.into()),
+        "toml" => Some(tree_sitter_toml_ng::LANGUAGE.into()),
+        _ => None,
+    }
+}
+
 pub fn lang_for_extension(ext: &str) -> Option<&'static str> {
     match ext {
         "rs"                          => Some("rust"),

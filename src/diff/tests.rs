@@ -125,3 +125,66 @@ fn test_multiple_hunks() {
     // Lines 2 and 9 are changed, with only 1 line of context they should be separate hunks
     assert_eq!(hunks.len(), 2);
 }
+
+#[test]
+fn test_compute_diff_content_sets_header_context_for_rust() {
+    let old = "fn foo() {\n    let x = 1;\n}\n";
+    let new = "fn foo() {\n    let x = 99;\n}\n";
+    let dc = compute_diff_content("src/main.rs", Some(old), Some(new));
+    assert_eq!(dc.hunks.len(), 1);
+    assert!(
+        dc.hunks[0].header_context.is_some(),
+        "header_context should be populated for Rust files"
+    );
+    assert!(dc.hunks[0].header_context.as_ref().unwrap().contains("foo"));
+}
+
+#[test]
+fn test_compute_full_diff_content_not_affected() {
+    let old = "fn foo() {\n    let x = 1;\n}\n";
+    let new = "fn foo() {\n    let x = 99;\n}\n";
+    let dc = compute_full_diff_content("src/main.rs", Some(old), Some(new));
+    // Full diff hunks should NOT have header_context set (expand_hunks not called)
+    for hunk in &dc.hunks {
+        assert!(hunk.header_context.is_none());
+    }
+}
+
+#[test]
+fn test_staging_expanded_hunk_produces_correct_content() {
+    use crate::git::hunk::apply_hunk_to_content;
+
+    // 12-line file with a small function — expansion covers the whole function
+    let old = "\
+// header
+fn small() {
+    let a = 1;
+    let b = 2;
+    let c = 3;
+}
+// footer
+";
+    let new = "\
+// header
+fn small() {
+    let a = 1;
+    let b = 99;
+    let c = 3;
+}
+// footer
+";
+
+    let dc = compute_diff_content("lib.rs", Some(old), Some(new));
+    assert_eq!(dc.hunks.len(), 1);
+
+    let hunk = &dc.hunks[0];
+    // The expanded hunk should have Equal context lines from expansion
+    assert!(
+        hunk.lines.iter().filter(|l| l.kind == ChangeKind::Equal).count() >= 4,
+        "expanded hunk should have context lines covering the function"
+    );
+
+    // Apply the expanded hunk — should produce the new file content
+    let result = apply_hunk_to_content(old, hunk, None);
+    assert_eq!(result, new, "staging expanded hunk must produce correct content");
+}

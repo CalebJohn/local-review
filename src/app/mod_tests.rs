@@ -197,9 +197,9 @@
 
     fn three_hunk_dc() -> DiffContent {
         make_dc(vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl(ChangeKind::Insert, None, Some(1)); 2], has_header: true },
-            DiffHunk { old_start: 3, new_start: 3, lines: vec![dl(ChangeKind::Insert, None, Some(3)); 3], has_header: true },
-            DiffHunk { old_start: 8, new_start: 8, lines: vec![dl(ChangeKind::Insert, None, Some(8)); 5], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl(ChangeKind::Insert, None, Some(1)); 2], has_header: true, header_context: None },
+            DiffHunk { old_start: 3, new_start: 3, lines: vec![dl(ChangeKind::Insert, None, Some(3)); 3], has_header: true, header_context: None },
+            DiffHunk { old_start: 8, new_start: 8, lines: vec![dl(ChangeKind::Insert, None, Some(8)); 5], has_header: true, header_context: None },
         ])
     }
 
@@ -500,6 +500,7 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Equal, Some(1), Some(1)), dl(ChangeKind::Insert, None, Some(2))],
             has_header: true,
+            header_context: None,
         }]);
         // row 0 = header → resolves to first line
         assert_eq!(diff_line_at_row(&dc, 0), Some((ChangeKind::Equal, Some(1), Some(1))));
@@ -516,6 +517,7 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Equal, Some(1), Some(1))],
             has_header: true,
+            header_context: None,
         }]);
         assert_eq!(diff_line_at_row(&dc, 999), Some((ChangeKind::Equal, Some(1), Some(1))));
     }
@@ -540,6 +542,7 @@
                 dl(ChangeKind::Insert, None, Some(3)),
             ],
             has_header: true,
+            header_context: None,
         }]);
         // row layout: 0 header, 1 line1, 2 line2, 3 insert
         assert_eq!(row_for_diff_line(&dc, (ChangeKind::Equal, Some(2), Some(2))), Some(2));
@@ -553,6 +556,7 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Equal, Some(1), Some(1))],
             has_header: true,
+            header_context: None,
         }]);
         // line 99 is not present in this diff
         assert_eq!(row_for_diff_line(&dc, (ChangeKind::Equal, Some(99), Some(99))), None);
@@ -699,12 +703,14 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Insert, None, Some(1)); 5],
             has_header: true,
+            header_context: None,
         };
         let hunk2 = DiffHunk {
             old_start: 10,
             new_start: 10,
             lines: vec![dl(ChangeKind::Insert, None, Some(10)); 3],
             has_header: true,
+            header_context: None,
         };
         app.diff_content = Some(make_dc(vec![hunk1, hunk2]));
         app.diff_cursor = 0;
@@ -720,12 +726,14 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Insert, None, Some(1)); 5],
             has_header: true,
+            header_context: None,
         };
         let hunk2 = DiffHunk {
             old_start: 10,
             new_start: 10,
             lines: vec![dl(ChangeKind::Insert, None, Some(10)); 3],
             has_header: true,
+            header_context: None,
         };
         app.diff_content = Some(make_dc(vec![hunk1, hunk2]));
         app.diff_cursor = 6;
@@ -741,12 +749,14 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Insert, None, Some(1)); 5],
             has_header: true,
+            header_context: None,
         };
         let hunk2 = DiffHunk {
             old_start: 10,
             new_start: 10,
             lines: vec![dl(ChangeKind::Insert, None, Some(10)); 3],
             has_header: true,
+            header_context: None,
         };
         app.diff_content = Some(make_dc(vec![hunk1, hunk2]));
         app.diff_cursor = 7;
@@ -762,6 +772,7 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Insert, None, Some(1)); 3],
             has_header: true,
+            header_context: None,
         };
         app.diff_content = Some(make_dc(vec![hunk]));
         app.diff_cursor = 2;
@@ -786,12 +797,14 @@
             new_start: 1,
             lines: vec![dl(ChangeKind::Insert, None, Some(1)); 5],
             has_header: true,
+            header_context: None,
         };
         let hunk2 = DiffHunk {
             old_start: 10,
             new_start: 10,
             lines: vec![dl(ChangeKind::Insert, None, Some(10)); 3],
             has_header: true,
+            header_context: None,
         };
         app.diff_content = Some(make_dc(vec![hunk1, hunk2]));
         app.move_cursor_to_hunk(1);
@@ -903,6 +916,7 @@
             old_start: 1, new_start: 1,
             lines: vec![dl(ChangeKind::Equal, Some(1), Some(1)), dl(ChangeKind::Insert, None, Some(2))],
             has_header: true,
+            header_context: None,
         }]));
         app.update(Message::EnterVisual);
         assert_eq!(app.mode, AppMode::Visual);
@@ -961,6 +975,7 @@
                 dl(ChangeKind::Equal, Some(3), Some(3)),
             ],
             has_header: true,
+            header_context: None,
         }]));
         app.update(Message::ExtendSelectionDown);
         assert_eq!(app.visual_cursor, 1);
@@ -984,6 +999,7 @@
                 dl(ChangeKind::Equal, Some(3), Some(3)),
             ],
             has_header: true,
+            header_context: None,
         }]));
         app.update(Message::ExtendSelectionUp);
         assert_eq!(app.visual_cursor, 1);
@@ -1003,6 +1019,7 @@
             old_start: 1, new_start: 1,
             lines: vec![dl(ChangeKind::Equal, Some(1), Some(1))],
             has_header: true,
+            header_context: None,
         }]));
         app.update(Message::ExtendSelectionUp);
         assert_eq!(app.visual_cursor, 0);
@@ -1023,6 +1040,7 @@
                 dl(ChangeKind::Equal, Some(3), Some(3)),
             ],
             has_header: true,
+            header_context: None,
         }]));
         app.update(Message::ExtendSelectionDown);
         app.update(Message::ExtendSelectionDown);
@@ -1109,9 +1127,9 @@
         let mut app = test_app_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(make_dc(vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
-            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true },
-            DiffHunk { old_start: 10, new_start: 10, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(10), true)], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true, header_context: None },
+            DiffHunk { old_start: 10, new_start: 10, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(10), true)], has_header: true, header_context: None },
         ]));
 
         // Filter off: all 3 hunks visible
@@ -1131,8 +1149,8 @@
         let mut app = test_app_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(make_dc(vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true); 2], has_header: true },
-            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false); 3], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true); 2], has_header: true, header_context: None },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false); 3], has_header: true, header_context: None },
         ]));
         app.semantic_filter = true;
         app.diff_scroll = 0;
@@ -1148,8 +1166,8 @@
         let mut app = test_app_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(make_dc(vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Delete, Some(1), None, false); 3], has_header: true },
-            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(5), true); 2], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Delete, Some(1), None, false); 3], has_header: true, header_context: None },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(5), true); 2], has_header: true, header_context: None },
         ]));
         app.semantic_filter = true;
         app.diff_scroll = 4; // past the second hunk
@@ -1193,8 +1211,8 @@
     fn test_hunk_counts_all_visible_when_filter_off() {
         let mut app = test_app_with_files(vec![]);
         app.diff_content = Some(make_dc(vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
-            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true, header_context: None },
         ]));
         app.semantic_filter = false;
         assert_eq!(app.hunk_counts(), Some((2, 2, 0)));
@@ -1204,9 +1222,9 @@
     fn test_hunk_counts_hides_formatting_when_filter_on() {
         let mut app = test_app_with_files(vec![]);
         app.diff_content = Some(make_dc(vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
-            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true },
-            DiffHunk { old_start: 10, new_start: 10, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(10), true)], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false)], has_header: true, header_context: None },
+            DiffHunk { old_start: 10, new_start: 10, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(10), true)], has_header: true, header_context: None },
         ]));
         app.semantic_filter = true;
         assert_eq!(app.hunk_counts(), Some((1, 3, 2)));
@@ -1216,8 +1234,8 @@
     fn test_hunk_counts_all_formatting_hidden() {
         let mut app = test_app_with_files(vec![]);
         app.diff_content = Some(make_dc(vec![
-            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true },
-            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, true)], has_header: true },
+            DiffHunk { old_start: 1, new_start: 1, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(1), true)], has_header: true, header_context: None },
+            DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, true)], has_header: true, header_context: None },
         ]));
         app.semantic_filter = true;
         assert_eq!(app.hunk_counts(), Some((0, 2, 2)));

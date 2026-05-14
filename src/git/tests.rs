@@ -22,6 +22,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\n", &hunk), vec!["a", "X", "c"]);
     }
@@ -37,6 +38,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\n", &hunk), vec!["a", "c"]);
     }
@@ -52,6 +54,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_lines("a\nc\n", &hunk), vec!["a", "b", "c"]);
     }
@@ -68,6 +71,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\nd\n", &hunk), vec!["a", "d"]);
     }
@@ -84,6 +88,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_lines("a\nb\nc\nd\n", &hunk), vec!["b", "d"]);
     }
@@ -102,6 +107,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let old = "1\n2\n3\n4\n5\n6\n7\n";
         assert_eq!(apply_hunk_lines(old, &hunk), vec!["1", "2", "X", "Y", "5", "6", "7"]);
@@ -125,6 +131,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(8), new_lineno: Some(7), content: "h\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let old = "a\nb\nc\nd\ne\nf\ng\nh\n";
         assert_eq!(
@@ -142,6 +149,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let result = apply_hunk_to_content("a\nb\n", &hunk, None);
         assert_eq!(result, "X\nb\n");
@@ -156,6 +164,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let result = apply_hunk_to_content("a\nb", &hunk, None);
         assert_eq!(result, "X\nb");
@@ -212,6 +221,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(reverse_apply_hunk_lines("X\nb\nc\n", &hunk), vec!["a", "b", "c"]);
     }
@@ -227,6 +237,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(2), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(reverse_apply_hunk_lines("a\nc\n", &hunk), vec!["a", "b", "c"]);
     }
@@ -242,6 +253,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(reverse_apply_hunk_lines("a\nb\nc\n", &hunk), vec!["a", "c"]);
     }
@@ -259,6 +271,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(5), new_lineno: Some(5), content: "5\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let new = "1\n2\nX\nY\n5\n6\n7\n";
         assert_eq!(
@@ -297,6 +310,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let result = reverse_apply_hunk_to_content("X\nb\n", &hunk, None);
         assert_eq!(result, "a\nb\n");
@@ -311,6 +325,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let result = reverse_apply_hunk_to_content("X\nb", &hunk, None);
         assert_eq!(result, "a\nb");
@@ -340,6 +355,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[]), vec!["a", "b", "c"]);
     }
@@ -356,6 +372,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let filtered = apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[1, 2]);
         let full = apply_hunk_lines("a\nb\nc\n", &hunk);
@@ -374,6 +391,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[1]), vec!["a", "c"]);
     }
@@ -390,6 +408,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(3), new_lineno: Some(3), content: "c\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(apply_hunk_filtered_lines("a\nb\nc\n", &hunk, &[2]), vec!["a", "b", "X", "c"]);
     }
@@ -406,6 +425,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(4), new_lineno: Some(2), content: "d\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         // Select only first delete (index 0): a removed, c kept
         assert_eq!(apply_hunk_filtered_lines("a\nb\nc\nd\n", &hunk, &[0]), vec!["b", "c", "d"]);
@@ -421,6 +441,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[]), vec!["X", "b", "c"]);
     }
@@ -435,6 +456,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         let filtered = reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[0, 1]);
         let full = reverse_apply_hunk_lines("X\nb\nc\n", &hunk);
@@ -452,6 +474,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[0]), vec!["a", "X", "b", "c"]);
     }
@@ -467,6 +490,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Equal,  old_lineno: Some(2), new_lineno: Some(2), content: "b\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         assert_eq!(reverse_apply_hunk_filtered_lines("X\nb\nc\n", &hunk, &[1]), vec!["b", "c"]);
     }
@@ -480,6 +504,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         // Select both change lines: delete a, insert X
         let result = apply_hunk_to_content("a\nb\n", &hunk, Some(&[0, 1]));
@@ -495,6 +520,7 @@
                 DiffLine { formatting_only: false, kind: ChangeKind::Insert, old_lineno: None,    new_lineno: Some(1), content: "X\n".into() },
             ],
             has_header: true,
+            header_context: None,
         };
         // Select both change lines: restore a, remove X
         let result = reverse_apply_hunk_to_content("X\nb\n", &hunk, Some(&[0, 1]));

@@ -1,5 +1,6 @@
 mod app;
 mod classify;
+mod context;
 mod diff;
 mod git;
 mod input;

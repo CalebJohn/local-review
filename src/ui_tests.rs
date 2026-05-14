@@ -20,6 +20,7 @@ fn test_diff_lines_formatting_only_insert_is_dimmed() {
             dl(ChangeKind::Insert, None, Some(1), true),
         ],
         has_header: true,
+        header_context: None,
     }]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
     // First line is the hunk header, second is the content line
@@ -45,6 +46,7 @@ fn test_diff_lines_formatting_only_delete_is_dimmed() {
             dl(ChangeKind::Delete, Some(1), None, true),
         ],
         has_header: true,
+        header_context: None,
     }]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
     assert_eq!(lines.len(), 2);
@@ -68,6 +70,7 @@ fn test_diff_lines_semantic_insert_is_not_dimmed() {
             dl(ChangeKind::Insert, None, Some(1), false),
         ],
         has_header: true,
+        header_context: None,
     }]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
     assert_eq!(lines.len(), 2);
@@ -88,6 +91,7 @@ fn test_diff_lines_semantic_delete_is_not_dimmed() {
             dl(ChangeKind::Delete, Some(1), None, false),
         ],
         has_header: true,
+        header_context: None,
     }]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
     assert_eq!(lines.len(), 2);
@@ -108,6 +112,7 @@ fn test_diff_lines_equal_line_never_dimmed() {
             dl(ChangeKind::Equal, Some(1), Some(1), false),
         ],
         has_header: true,
+        header_context: None,
     }]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
     assert_eq!(lines.len(), 2);
@@ -131,6 +136,7 @@ fn test_diff_lines_mixed_hunk_only_semantic_dimmed() {
             dl(ChangeKind::Insert, None, Some(2), false), // semantic
         ],
         has_header: true,
+        header_context: None,
     }]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, false);
     assert_eq!(lines.len(), 5); // header + 4 content lines
@@ -164,6 +170,7 @@ fn test_diff_lines_semantic_filter_hides_pure_formatting_hunk() {
                 dl(ChangeKind::Insert, None, Some(1), true),
             ],
             has_header: true,
+            header_context: None,
         },
     ]);
     // With filter off: hunk renders (header + content)
@@ -187,6 +194,7 @@ fn test_diff_lines_semantic_filter_shows_mixed_hunk() {
             dl(ChangeKind::Insert, None, Some(2), false), // semantic
         ],
         has_header: true,
+        header_context: None,
     }]);
     // Mixed hunk should still show with filter on
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);
@@ -203,6 +211,7 @@ fn test_diff_lines_semantic_filter_shows_semantic_hunk() {
             dl(ChangeKind::Insert, None, Some(1), false),
         ],
         has_header: true,
+        header_context: None,
     }]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);
     assert_eq!(lines.len(), 3); // header + 2 content lines
@@ -218,6 +227,7 @@ fn test_diff_lines_semantic_filter_mixed_hunks_hides_only_formatting() {
                 dl(ChangeKind::Insert, None, Some(1), true),
             ],
             has_header: true,
+            header_context: None,
         },
         DiffHunk {
             old_start: 5,
@@ -227,6 +237,7 @@ fn test_diff_lines_semantic_filter_mixed_hunks_hides_only_formatting() {
                 dl(ChangeKind::Insert, None, Some(5), false),
             ],
             has_header: true,
+            header_context: None,
         },
         DiffHunk {
             old_start: 10,
@@ -235,6 +246,7 @@ fn test_diff_lines_semantic_filter_mixed_hunks_hides_only_formatting() {
                 dl(ChangeKind::Insert, None, Some(10), true),
             ],
             has_header: true,
+            header_context: None,
         },
     ]);
     // With filter on: only the middle semantic hunk should render
@@ -250,12 +262,14 @@ fn test_diff_lines_semantic_filter_all_formatting_returns_empty() {
             new_start: 1,
             lines: vec![dl(ChangeKind::Insert, None, Some(1), true)],
             has_header: true,
+            header_context: None,
         },
         DiffHunk {
             old_start: 5,
             new_start: 5,
             lines: vec![dl(ChangeKind::Delete, Some(5), None, true)],
             has_header: true,
+            header_context: None,
         },
     ]);
     let lines = diff_lines(&dc, None, Some(0), &[], 99, &AppMode::Normal, true);

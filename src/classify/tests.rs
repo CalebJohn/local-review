@@ -164,6 +164,7 @@ fn make_hunk_with_changes(
         new_start: 1,
         lines,
         has_header: true,
+        header_context: None,
     };
     (hunk, old_content, new_content)
 }
@@ -295,6 +296,7 @@ fn test_classify_diff_mixed_context_and_changes() {
         new_start: 1,
         lines,
         has_header: true,
+        header_context: None,
     };
     let old_content = "fn main() {\nlet x=1;\n}\n";
     let new_content = "fn main() {\n    let x = 1;\n}\n";

@@ -158,6 +158,7 @@ mod tests {
                 dl(ChangeKind::Equal, Some(12), Some(12)),
             ],
             has_header: true,
+            header_context: None,
         };
         let result = format_comment(&ctx, &hunk, "This looks wrong");
         assert!(result.starts_with("File: src/main.rs (unstaged)\n"));
@@ -183,6 +184,7 @@ mod tests {
                 dl(ChangeKind::Insert, None, Some(1)),
             ],
             has_header: true,
+            header_context: None,
         };
         let result = format_comment(&ctx, &hunk, "New line added");
         assert!(result.contains("(staged)"));
@@ -207,6 +209,7 @@ mod tests {
                 dl(ChangeKind::Equal, Some(12), Some(12)),
             ],
             has_header: true,
+            header_context: None,
         };
         let result = format_comment(&ctx, &hunk, "These two lines");
         assert!(result.starts_with("File: src/main.rs (unstaged)\n"));
@@ -228,6 +231,7 @@ mod tests {
             new_start: 1,
             lines: vec![dl(ChangeKind::Insert, None, Some(1))],
             has_header: true,
+            header_context: None,
         };
         let result = format_comment(&ctx, &hunk, "");
         assert!(result.ends_with("\n\n"));

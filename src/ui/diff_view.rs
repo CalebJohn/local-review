@@ -5,15 +5,22 @@ use crate::app::{App, AppMode};
 use crate::diff::types::{ChangeKind, DiffContent};
 use crate::syntax::StyledDiffContent;
 
-fn hunk_header_line(old_start: u32, new_start: u32, highlighted: bool) -> Line<'static> {
+fn hunk_header_line(old_start: u32, new_start: u32, header_context: Option<&str>, highlighted: bool) -> Line<'static> {
     let gutter = Span::raw(if highlighted { "│" } else { " " });
-    Line::from(vec![
+    let mut spans = vec![
         gutter,
         Span::styled(
             format!("@@ -{} +{} @@", old_start, new_start),
             Style::default().fg(Color::Cyan),
         ),
-    ])
+    ];
+    if let Some(ctx) = header_context {
+        spans.push(Span::styled(
+            format!(" {ctx}"),
+            Style::default().fg(Color::Cyan),
+        ));
+    }
+    Line::from(spans)
 }
 
 fn format_lineno(n: Option<u32>) -> String {
@@ -50,7 +57,7 @@ pub fn diff_lines(
         }
         let in_hunk = hunk.has_header && current_hunk_index == Some(hunk_idx);
         if hunk.has_header {
-            lines.push(hunk_header_line(hunk.old_start, hunk.new_start, in_hunk));
+            lines.push(hunk_header_line(hunk.old_start, hunk.new_start, hunk.header_context.as_deref(), in_hunk));
         }
         let gutter = if in_hunk { "│" } else { " " };
         for dl in &hunk.lines {
