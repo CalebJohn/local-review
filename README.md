@@ -14,6 +14,16 @@ A terminal-native git diff review tool. Navigate, stage, and discard changes wit
 - **Mouse support** — Click to navigate, drag to select lines.
 - **Vim-like keybindings** — `j`/`k` to move, `]`/`[` for hunks, `s`/`u` to stage/unstage.
 
+## Disclaimer
+
+This was a project for me to:
+
+    1. Build something for my personal use
+
+    2. Experiment with agentic develepment
+
+You can see this reflected in the choice of features, as well as the messy git history where I experimented with "vibe coding" and other techniques. I'm putting this out there in case anywhere feels like they need a similar tool, but I will not be adding features or requests from the public. Feel free to fork and modify!
+
 ## Installation
 
 ```bash
