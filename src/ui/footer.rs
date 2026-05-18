@@ -4,7 +4,7 @@ use ratatui::widgets::Paragraph;
 use crate::app::{App, AppMode, Focus, SidebarSection};
 
 pub fn footer_line<'a>(app: &'a App) -> Line<'a> {
-    let key_style = Style::default().fg(Color::White).bg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let key_style = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
     let desc_style = Style::default().fg(Color::Gray);
     let sep = Span::styled("  ", desc_style);
 
