@@ -51,7 +51,7 @@ impl App {
                 if let Some(old) = old_content {
                     if let Err(e) = self.undo.record(&self.repo, "stage hunk", std::slice::from_ref(&entry.path)) {
                         self.status_message = Some(format!("Stage hunk failed: {}", e));
-                        self.save_scroll_position();
+                        self.save_cursor_position();
                         self.refresh_files();
                         self.restore_hunk_position(hunk_idx);
                         return;
@@ -60,7 +60,7 @@ impl App {
                         self.status_message = Some(format!("Stage hunk failed: {}", e));
                         self.undo.discard_last();
                     }
-                    self.save_scroll_position();
+                    self.save_cursor_position();
                     self.refresh_files();
                     self.restore_hunk_position(hunk_idx);
                 }
@@ -85,7 +85,7 @@ impl App {
                 if let Some(idx_content) = index_content {
                     if let Err(e) = self.undo.record(&self.repo, "unstage hunk", std::slice::from_ref(&entry.path)) {
                         self.status_message = Some(format!("Unstage hunk failed: {}", e));
-                        self.save_scroll_position();
+                        self.save_cursor_position();
                         self.refresh_files();
                         self.restore_hunk_position(hunk_idx);
                         return;
@@ -94,7 +94,7 @@ impl App {
                         self.status_message = Some(format!("Unstage hunk failed: {}", e));
                         self.undo.discard_last();
                     }
-                    self.save_scroll_position();
+                    self.save_cursor_position();
                     self.refresh_files();
                     self.restore_hunk_position(hunk_idx);
                 }
@@ -156,7 +156,7 @@ impl App {
                         if let Some(wc) = workdir_content {
                             if let Err(e) = self.undo.record(&self.repo, "discard hunk", std::slice::from_ref(&entry.path)) {
                                 self.status_message = Some(format!("Discard hunk failed: {}", e));
-                                self.save_scroll_position();
+                                self.save_cursor_position();
                                 self.refresh_files();
                                 self.restore_hunk_position(hunk_idx);
                                 return;
@@ -165,7 +165,7 @@ impl App {
                                 self.status_message = Some(format!("Discard hunk failed: {}", e));
                                 self.undo.discard_last();
                             }
-                            self.save_scroll_position();
+                            self.save_cursor_position();
                             self.refresh_files();
                             self.restore_hunk_position(hunk_idx);
                         }
@@ -217,7 +217,7 @@ impl App {
                     }
                     self.mode = AppMode::Normal;
                     self.visual_selection = None;
-                    self.save_scroll_position();
+                    self.save_cursor_position();
                     self.refresh_files();
                     self.restore_hunk_position(hunk_idx);
                 }
@@ -262,7 +262,7 @@ impl App {
                     }
                     self.mode = AppMode::Normal;
                     self.visual_selection = None;
-                    self.save_scroll_position();
+                    self.save_cursor_position();
                     self.refresh_files();
                     self.restore_hunk_position(hunk_idx);
                 }

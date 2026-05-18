@@ -121,7 +121,7 @@ pub struct App {
     pub should_quit: bool,
     pub styled_diff: Option<StyledDiffContent>,
     pub current_hunk_index: Option<usize>,
-    pub scroll_positions: HashMap<(String, SidebarSection, bool), u16>,
+    pub cursor_positions: HashMap<(String, SidebarSection, bool), usize>,
     pub diff_stale: bool,
     pub auto_reload: bool,
     pub status_message: Option<String>,
@@ -175,7 +175,7 @@ impl App {
             should_quit: false,
             styled_diff: None,
             current_hunk_index: None,
-            scroll_positions: HashMap::new(),
+            cursor_positions: HashMap::new(),
             diff_stale: false,
             auto_reload: false,
             status_message: None,
@@ -239,52 +239,51 @@ impl App {
     }
 
     fn load_diff_for_selected(&mut self) {
-        self.restore_scroll_for_selected();
         self.reset_diff_view_state();
 
-        let Some(entry) = self.selected_entry().cloned() else {
+        if let Some(entry) = self.selected_entry().cloned() {
+            let cache_key = (entry.path.clone(), self.sidebar_section, self.show_full_file);
+            if let Some((dc, styled)) = self.diff_cache.get(&cache_key) {
+                self.diff_content = Some(dc.clone());
+                self.styled_diff = styled.clone();
+            } else if let Some((old, new)) = self.load_file_contents(&entry.path) {
+                self.compute_diff(&entry.path, old, new);
+                if let Some(dc) = &self.diff_content {
+                    self.diff_cache.insert(cache_key, (dc.clone(), self.styled_diff.clone()));
+                }
+            } else {
+                self.diff_content = None;
+            }
+        } else {
             self.diff_content = None;
-            return;
-        };
-
-        let cache_key = (entry.path.clone(), self.sidebar_section, self.show_full_file);
-        if let Some((dc, styled)) = self.diff_cache.get(&cache_key) {
-            self.diff_content = Some(dc.clone());
-            self.styled_diff = styled.clone();
-            self.update_hunk_from_cursor();
-            return;
         }
 
-        let Some((old, new)) = self.load_file_contents(&entry.path) else {
-            self.diff_content = None;
-            return;
-        };
-
-        self.compute_diff(&entry.path, old, new);
-
-        if let Some(dc) = &self.diff_content {
-            self.diff_cache.insert(cache_key, (dc.clone(), self.styled_diff.clone()));
-        }
-
+        self.restore_cursor_for_selected();
         self.update_hunk_from_cursor();
     }
 
-    fn restore_scroll_for_selected(&mut self) {
+    fn restore_cursor_for_selected(&mut self) {
         let files = self.current_section_files();
         if self.selected_index < files.len() {
             let entry = &files[self.selected_index];
             let key = (entry.path.clone(), self.sidebar_section, self.show_full_file);
-            self.diff_scroll = self.scroll_positions.get(&key).copied().unwrap_or(0);
+            let saved = self.cursor_positions.get(&key).copied().unwrap_or(0);
+            let max = self.total_content_lines().saturating_sub(1);
+            self.diff_cursor = saved.min(max);
         } else {
-            self.diff_scroll = 0;
+            self.diff_cursor = 0;
         }
+        let cursor_row = self.cursor_row();
+        let half_vp = (self.diff_viewport_height as usize) / 2;
+        let target_scroll = cursor_row.saturating_sub(half_vp);
+        let max_scroll = self.total_diff_lines().saturating_sub(1);
+        self.diff_scroll = target_scroll.min(max_scroll) as u16;
     }
 
     fn reset_diff_view_state(&mut self) {
         self.styled_diff = None;
         self.diff_stale = false;
         self.mode = AppMode::Normal;
-        self.diff_cursor = 0;
         self.visual_selection = None;
         self.visual_from_mouse = false;
         self.search_matches.clear();
@@ -348,10 +347,10 @@ impl App {
         self.selected_entry().map(|e| e.path.clone())
     }
 
-    pub(super) fn save_scroll_position(&mut self) {
+    pub(super) fn save_cursor_position(&mut self) {
         if let Some(entry) = self.selected_entry() {
             let key = (entry.path.clone(), self.sidebar_section, self.show_full_file);
-            self.scroll_positions.insert(key, self.diff_scroll);
+            self.cursor_positions.insert(key, self.diff_cursor);
         }
     }
 
@@ -482,7 +481,7 @@ impl App {
             should_quit: false,
             styled_diff: None,
             current_hunk_index: None,
-            scroll_positions: HashMap::new(),
+            cursor_positions: HashMap::new(),
             diff_stale: false,
             auto_reload: false,
             status_message: None,

@@ -5,18 +5,18 @@ impl App {
     pub(super) fn handle_move_up(&mut self) {
         self.status_message = None;
         if self.selected_index > 0 {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.selected_index -= 1;
             self.load_diff_for_selected();
         } else if self.sidebar_section == SidebarSection::Unstaged
             && !self.staged_files.is_empty()
         {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.sidebar_section = SidebarSection::Staged;
             self.selected_index = self.staged_files.len() - 1;
             self.load_diff_for_selected();
         } else if !self.unstaged_files.is_empty() {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.sidebar_section = SidebarSection::Unstaged;
             self.selected_index = self.unstaged_files.len() - 1;
             self.load_diff_for_selected();
@@ -27,19 +27,19 @@ impl App {
         self.status_message = None;
         let section_len = self.current_section_files().len();
         if section_len > 0 && self.selected_index < section_len - 1 {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.selected_index += 1;
             self.load_diff_for_selected();
         } else if self.sidebar_section == SidebarSection::Staged
             && !self.unstaged_files.is_empty()
         {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.sidebar_section = SidebarSection::Unstaged;
             self.selected_index = 0;
             self.load_diff_for_selected();
         }
         else if section_len > 0 {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.selected_index = 0;
             self.load_diff_for_selected();
         }
@@ -147,30 +147,46 @@ impl App {
     pub(super) fn handle_next_hunk(&mut self) {
         self.status_message = None;
         let change_starts = self.change_hunk_starts();
-        if let Some(&(pos, s)) = change_starts.iter().find(|(_, s)| *s > self.diff_scroll) {
-            self.diff_scroll = s;
-            self.move_cursor_to_hunk(pos);
-        } else if let Some(&(pos, s)) = change_starts.last() {
-            self.diff_scroll = s;
-            self.move_cursor_to_hunk(pos);
-        }
+        if change_starts.is_empty() { return; }
+        let cursor_row = self.cursor_row();
+        let current = change_starts.iter()
+            .rposition(|(_, s)| (*s as usize) <= cursor_row);
+        let target = match current {
+            Some(i) if i + 1 < change_starts.len() => i + 1,
+            Some(i) => i,
+            None => 0,
+        };
+        let (pos, _) = change_starts[target];
+        self.move_cursor_to_hunk(pos);
+        self.scroll_to_cursor_hunk();
     }
 
     pub(super) fn handle_prev_hunk(&mut self) {
         self.status_message = None;
         let change_starts = self.change_hunk_starts();
-        if let Some(&(pos, s)) = change_starts.iter().rev().find(|(_, s)| *s < self.diff_scroll) {
-            self.diff_scroll = s;
-            self.move_cursor_to_hunk(pos);
-        } else if let Some(&(pos, s)) = change_starts.first() {
-            self.diff_scroll = s;
-            self.move_cursor_to_hunk(pos);
-        }
+        if change_starts.is_empty() { return; }
+        let cursor_row = self.cursor_row();
+        let current = change_starts.iter()
+            .rposition(|(_, s)| (*s as usize) <= cursor_row);
+        let target = match current {
+            Some(i) if i > 0 => i - 1,
+            Some(i) => i,
+            None => 0,
+        };
+        let (pos, _) = change_starts[target];
+        self.move_cursor_to_hunk(pos);
+        self.scroll_to_cursor_hunk();
+    }
+
+    fn scroll_to_cursor_hunk(&mut self) {
+        let cursor_row = self.cursor_row();
+        let max_scroll = self.total_diff_lines().saturating_sub(1);
+        self.diff_scroll = cursor_row.saturating_sub(1).min(max_scroll) as u16;
     }
 
     pub(super) fn handle_mouse_click_staged_sidebar(&mut self, idx: usize) {
         if idx < self.staged_files.len() {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.sidebar_section = SidebarSection::Staged;
             self.selected_index = idx;
             self.focus = Focus::Sidebar;
@@ -180,7 +196,7 @@ impl App {
 
     pub(super) fn handle_mouse_click_unstaged_sidebar(&mut self, idx: usize) {
         if idx < self.unstaged_files.len() {
-            self.save_scroll_position();
+            self.save_cursor_position();
             self.sidebar_section = SidebarSection::Unstaged;
             self.selected_index = idx;
             self.focus = Focus::Sidebar;

@@ -279,7 +279,7 @@ impl App {
 
     fn navigate_to_sidebar_match(&mut self, match_idx: usize, wrapped: bool) {
         let (section, file_idx) = self.search_sidebar_matches[match_idx];
-        self.save_scroll_position();
+        self.save_cursor_position();
         self.sidebar_section = section;
         self.selected_index = file_idx;
         self.load_diff_for_selected();

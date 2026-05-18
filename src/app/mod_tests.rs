@@ -240,7 +240,7 @@
     }
 
     #[test]
-    fn test_circular_wrap_saves_scroll_position() {
+    fn test_circular_wrap_saves_cursor_position() {
         let mut app = App::test_with_files(vec![
             unstaged_entry(),
             FileEntry {
@@ -251,14 +251,12 @@
         ]);
         app.focus = Focus::DiffView;
         app.selected_index = 1;
-        app.diff_scroll = 30;
-        // Move down wraps from last to first — should save scroll
+        app.diff_cursor = 5;
         app.update(Message::MoveDown);
         assert_eq!(app.selected_index, 0);
-        assert_eq!(app.diff_scroll, 0);
-        // Verify scroll was saved for index 1
+        assert_eq!(app.diff_cursor, 0);
         let key = ("unstaged2.rs".to_string(), SidebarSection::Unstaged, false);
-        assert_eq!(app.scroll_positions.get(&key), Some(&30));
+        assert_eq!(app.cursor_positions.get(&key), Some(&5));
     }
 
     #[test]
@@ -320,12 +318,15 @@
         let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(three_hunk_dc());
-        app.diff_scroll = 0;
+        app.diff_cursor = 0;
         app.update(Message::NextHunk);
+        assert_eq!(app.diff_cursor, 2);
         assert_eq!(app.diff_scroll, 3);
         app.update(Message::NextHunk);
+        assert_eq!(app.diff_cursor, 5);
         assert_eq!(app.diff_scroll, 7);
         app.update(Message::NextHunk);
+        assert_eq!(app.diff_cursor, 5);
         assert_eq!(app.diff_scroll, 7);
     }
 
@@ -334,8 +335,9 @@
         let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(three_hunk_dc());
-        app.diff_scroll = 0;
+        app.diff_cursor = 0;
         app.update(Message::PrevHunk);
+        assert_eq!(app.diff_cursor, 0);
         assert_eq!(app.diff_scroll, 0);
     }
 
@@ -344,10 +346,12 @@
         let mut app = App::test_with_files(vec![]);
         app.focus = Focus::DiffView;
         app.diff_content = Some(three_hunk_dc());
-        app.diff_scroll = 7;
+        app.diff_cursor = 5;
         app.update(Message::PrevHunk);
+        assert_eq!(app.diff_cursor, 2);
         assert_eq!(app.diff_scroll, 3);
         app.update(Message::PrevHunk);
+        assert_eq!(app.diff_cursor, 0);
         assert_eq!(app.diff_scroll, 0);
     }
 
@@ -397,7 +401,7 @@
     }
 
     #[test]
-    fn test_move_down_resets_scroll_for_new_file() {
+    fn test_move_down_resets_cursor_for_new_file() {
         let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
@@ -406,17 +410,15 @@
                 workdir_status: None,
             },
         ]);
-        // Simulate scrolling down in the first file
-        app.diff_scroll = 42;
-        // Navigate to the second file
+        app.diff_cursor = 5;
         app.update(Message::MoveDown);
         assert_eq!(app.selected_index, 1);
-        // Second file was never visited, scroll should be 0
+        assert_eq!(app.diff_cursor, 0);
         assert_eq!(app.diff_scroll, 0);
     }
 
     #[test]
-    fn test_move_up_resets_scroll_for_new_file() {
+    fn test_move_up_resets_cursor_for_new_file() {
         let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
@@ -426,14 +428,15 @@
             },
         ]);
         app.selected_index = 1;
-        app.diff_scroll = 30;
+        app.diff_cursor = 4;
         app.update(Message::MoveUp);
         assert_eq!(app.selected_index, 0);
+        assert_eq!(app.diff_cursor, 0);
         assert_eq!(app.diff_scroll, 0);
     }
 
     #[test]
-    fn test_scroll_position_saved_and_restored_on_navigation() {
+    fn test_cursor_position_saved_and_restored_on_navigation() {
         let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
@@ -442,39 +445,48 @@
                 workdir_status: None,
             },
         ]);
-        // Scroll in first file
-        app.diff_scroll = 15;
-        // Move to second file — should save 15 for first file
+        app.diff_cache.insert(
+            ("staged.rs".to_string(), SidebarSection::Staged, false),
+            (n_line_dc("staged.rs", 20), None),
+        );
+        app.diff_cache.insert(
+            ("staged2.rs".to_string(), SidebarSection::Staged, false),
+            (n_line_dc("staged2.rs", 20), None),
+        );
+        app.diff_cursor = 3;
         app.update(Message::MoveDown);
-        assert_eq!(app.diff_scroll, 0);
-        // Scroll in second file
-        app.diff_scroll = 25;
-        // Move back to first file — should save 25 for second, restore 15 for first
+        assert_eq!(app.diff_cursor, 0);
+        app.diff_cursor = 7;
         app.update(Message::MoveUp);
-        assert_eq!(app.diff_scroll, 15);
-        // Move to second file again — should restore 25
+        assert_eq!(app.diff_cursor, 3);
         app.update(Message::MoveDown);
-        assert_eq!(app.diff_scroll, 25);
+        assert_eq!(app.diff_cursor, 7);
     }
 
     #[test]
-    fn test_cross_section_resets_scroll_for_new_file() {
+    fn test_cross_section_resets_cursor_for_new_file() {
         let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        app.diff_cache.insert(
+            ("staged.rs".to_string(), SidebarSection::Staged, false),
+            (n_line_dc("staged.rs", 20), None),
+        );
+        app.diff_cache.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            (n_line_dc("unstaged.rs", 20), None),
+        );
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
-        app.diff_scroll = 20;
-        // Cross from staged to unstaged
+        app.diff_cursor = 3;
         app.update(Message::MoveDown);
         assert_eq!(app.sidebar_section, SidebarSection::Unstaged);
-        assert_eq!(app.diff_scroll, 0);
-        // Scroll in unstaged, then cross back
-        app.diff_scroll = 10;
+        assert_eq!(app.diff_cursor, 0);
+        app.diff_cursor = 2;
         app.update(Message::MoveUp);
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
-        assert_eq!(app.diff_scroll, 20);
+        assert_eq!(app.diff_cursor, 3);
     }
 
     #[test]
-    fn test_mouse_click_resets_scroll_for_new_file() {
+    fn test_mouse_click_resets_cursor_for_new_file() {
         let mut app = App::test_with_files(vec![
             staged_only_entry(),
             FileEntry {
@@ -483,23 +495,30 @@
                 workdir_status: None,
             },
         ]);
-        app.diff_scroll = 50;
+        app.diff_cursor = 5;
         app.update(Message::MouseClickStagedSidebar(1));
         assert_eq!(app.selected_index, 1);
+        assert_eq!(app.diff_cursor, 0);
         assert_eq!(app.diff_scroll, 0);
     }
 
     #[test]
-    fn test_mouse_click_cross_section_saves_scroll() {
+    fn test_mouse_click_cross_section_saves_cursor() {
         let mut app = App::test_with_files(vec![staged_only_entry(), unstaged_entry()]);
+        app.diff_cache.insert(
+            ("staged.rs".to_string(), SidebarSection::Staged, false),
+            (n_line_dc("staged.rs", 20), None),
+        );
+        app.diff_cache.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            (n_line_dc("unstaged.rs", 20), None),
+        );
         assert_eq!(app.sidebar_section, SidebarSection::Staged);
-        app.diff_scroll = 33;
-        // Click into unstaged section
+        app.diff_cursor = 4;
         app.update(Message::MouseClickUnstagedSidebar(0));
-        assert_eq!(app.diff_scroll, 0);
-        // Click back to staged
+        assert_eq!(app.diff_cursor, 0);
         app.update(Message::MouseClickStagedSidebar(0));
-        assert_eq!(app.diff_scroll, 33);
+        assert_eq!(app.diff_cursor, 4);
     }
 
     // ---- discard confirmation flow tests ----
@@ -603,6 +622,15 @@
 
     fn dl(kind: ChangeKind, old: Option<u32>, new: Option<u32>) -> DiffLine {
         DiffLine { kind, old_lineno: old, new_lineno: new, content: "x\n".to_string(), formatting_only: false }
+    }
+
+    fn n_line_dc(path: &str, n: usize) -> DiffContent {
+        let lines: Vec<DiffLine> = (1..=n).map(|i| dl(ChangeKind::Equal, Some(i as u32), Some(i as u32))).collect();
+        DiffContent {
+            path: path.to_string(),
+            hunks: vec![DiffHunk { old_start: 1, new_start: 1, lines, has_header: true, header_context: None }],
+            is_binary: false,
+        }
     }
 
     #[test]
@@ -782,25 +810,30 @@
     }
 
     #[test]
-    fn test_scroll_positions_are_per_mode() {
-        // Saved scroll for hunk mode should not bleed into full-file mode.
+    fn test_cursor_positions_are_per_mode() {
         let mut app = App::test_with_files(vec![unstaged_entry()]);
-        app.scroll_positions.insert(
+        app.diff_cache.insert(
             ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
-            42,
+            (n_line_dc("unstaged.rs", 20), None),
         );
-        app.scroll_positions.insert(
+        app.diff_cache.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, true),
+            (n_line_dc("unstaged.rs", 20), None),
+        );
+        app.cursor_positions.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            3,
+        );
+        app.cursor_positions.insert(
             ("unstaged.rs".to_string(), SidebarSection::Unstaged, true),
             7,
         );
-        // Hunk mode reads false-keyed entry
         app.show_full_file = false;
         app.load_diff_for_selected();
-        assert_eq!(app.diff_scroll, 42);
-        // Full-file mode reads true-keyed entry
+        assert_eq!(app.diff_cursor, 3);
         app.show_full_file = true;
         app.load_diff_for_selected();
-        assert_eq!(app.diff_scroll, 7);
+        assert_eq!(app.diff_cursor, 7);
     }
 
     // ---- active-hunk visibility tests ----
@@ -1265,12 +1298,11 @@
             DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Delete, Some(5), None, false); 3], has_header: true, header_context: None },
         ]));
         app.semantic_filter = true;
-        app.diff_scroll = 0;
+        app.diff_cursor = 0;
 
-        // Next hunk should skip the formatting hunk and go to the semantic one.
-        // The formatting hunk is hidden (0 rows), so the semantic hunk starts at row 0.
         app.update(Message::NextHunk);
-        assert_eq!(app.diff_scroll, 0);
+        assert_eq!(app.diff_cursor, 2);
+        assert_eq!(app.current_hunk_index, Some(1));
     }
 
     #[test]
@@ -1282,11 +1314,11 @@
             DiffHunk { old_start: 5, new_start: 5, lines: vec![dl_fmt(ChangeKind::Insert, None, Some(5), true); 2], has_header: true, header_context: None },
         ]));
         app.semantic_filter = true;
-        app.diff_scroll = 4; // past the second hunk
+        app.diff_cursor = 4;
 
-        // Prev hunk should skip the formatting hunk and go to the semantic one
         app.update(Message::PrevHunk);
-        assert_eq!(app.diff_scroll, 0);
+        assert_eq!(app.diff_cursor, 0);
+        assert_eq!(app.current_hunk_index, Some(0));
     }
 
     // ── hunk_counts tests (Task 8) ──────────────────────────────────
@@ -1516,4 +1548,88 @@
 
         assert!(!app.search_matches.is_empty(), "matches should be recomputed lazily");
         assert!(app.search_match_cursor.is_some(), "cursor should advance to first match");
+    }
+
+    // ---- cursor position preservation tests ----
+
+    #[test]
+    fn test_cursor_preserved_across_file_switch() {
+        let mut app = App::test_with_files(vec![
+            unstaged_entry(),
+            FileEntry {
+                path: "unstaged2.rs".to_string(),
+                index_status: None,
+                workdir_status: Some(FileStatus::Modified),
+            },
+        ]);
+        app.diff_cache.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            (n_line_dc("unstaged.rs", 20), None),
+        );
+        app.diff_cache.insert(
+            ("unstaged2.rs".to_string(), SidebarSection::Unstaged, false),
+            (n_line_dc("unstaged2.rs", 20), None),
+        );
+        app.diff_cursor = 10;
+        app.update(Message::MoveDown);
+        assert_eq!(app.diff_cursor, 0);
+        app.update(Message::MoveUp);
+        assert_eq!(app.diff_cursor, 10);
+    }
+
+    #[test]
+    fn test_cursor_clamped_on_return_to_shorter_file() {
+        let mut app = App::test_with_files(vec![
+            unstaged_entry(),
+            FileEntry {
+                path: "unstaged2.rs".to_string(),
+                index_status: None,
+                workdir_status: Some(FileStatus::Modified),
+            },
+        ]);
+        app.diff_cache.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            (n_line_dc("unstaged.rs", 5), None),
+        );
+        app.diff_cache.insert(
+            ("unstaged2.rs".to_string(), SidebarSection::Unstaged, false),
+            (n_line_dc("unstaged2.rs", 20), None),
+        );
+        app.cursor_positions.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            50,
+        );
+        app.selected_index = 1;
+        app.update(Message::MoveUp);
+        assert_eq!(app.diff_cursor, 4);
+    }
+
+    #[test]
+    fn test_scroll_derived_from_restored_cursor() {
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
+        app.diff_cache.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            (n_line_dc("unstaged.rs", 100), None),
+        );
+        app.cursor_positions.insert(
+            ("unstaged.rs".to_string(), SidebarSection::Unstaged, false),
+            50,
+        );
+        app.diff_viewport_height = 20;
+        app.load_diff_for_selected();
+        assert_eq!(app.diff_cursor, 50);
+        let cursor_row = app.cursor_row();
+        assert!(app.diff_scroll as usize <= cursor_row);
+        assert!(cursor_row < app.diff_scroll as usize + 20);
+    }
+
+    #[test]
+    fn test_mouse_wheel_does_not_move_cursor() {
+        let mut app = App::test_with_files(vec![unstaged_entry()]);
+        app.diff_content = Some(n_line_dc("unstaged.rs", 100));
+        app.diff_cursor = 10;
+        app.update(Message::ScrollDiffDown);
+        assert_eq!(app.diff_cursor, 10);
+        app.update(Message::ScrollDiffUp);
+        assert_eq!(app.diff_cursor, 10);
     }
