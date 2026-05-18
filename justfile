@@ -1,3 +1,3 @@
 release:
   cargo build --release
-  cp target/release/rev ~/.local/bin/re
+  cp target/release/re ~/.local/bin/re
