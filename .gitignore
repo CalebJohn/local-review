@@ -1,1 +1,7 @@
 target/
+.claude/
+.opencode/
+agents/
+references/
+skills/
+AGENTS.md
