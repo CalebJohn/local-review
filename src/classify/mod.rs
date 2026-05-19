@@ -79,11 +79,10 @@ fn classify_hunk(
                 if let Some(ln) = line.old_lineno {
                     delete_lines.push(ln);
                 }
-            } else if line.kind == ChangeKind::Insert {
-                if let Some(ln) = line.new_lineno {
+            } else if line.kind == ChangeKind::Insert
+                && let Some(ln) = line.new_lineno {
                     insert_lines.push(ln);
                 }
-            }
         }
 
         // One-sided groups (pure Insert or pure Delete): formatting-only

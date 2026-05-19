@@ -104,8 +104,8 @@ impl GitRepo {
         let workdir = self.workdir_or_err()?;
         let full_path = workdir.join(path);
 
-        if let Ok(meta) = std::fs::symlink_metadata(&full_path) {
-            if meta.file_type().is_symlink() {
+        if let Ok(meta) = std::fs::symlink_metadata(&full_path)
+            && meta.file_type().is_symlink() {
                 let target = std::fs::read_link(&full_path)?;
                 #[cfg(unix)]
                 let text = String::from_utf8_lossy(target.as_os_str().as_bytes()).into_owned();
@@ -113,7 +113,6 @@ impl GitRepo {
                 let text = target.to_string_lossy().into_owned();
                 return Ok(ContentResult::Text(text));
             }
-        }
 
         match std::fs::read(&full_path) {
             Ok(bytes) => {

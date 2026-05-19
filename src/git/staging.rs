@@ -89,14 +89,13 @@ impl GitRepo {
         let mut index = self.repo.index()?;
 
         let head = self.head_content(path)?;
-        if let ContentResult::Text(ref head_text) = head {
-            if *head_text == new_index_content {
+        if let ContentResult::Text(ref head_text) = head
+            && *head_text == new_index_content {
                 let head_ref = self.repo.head()?;
                 let commit = head_ref.peel_to_commit()?;
                 self.repo.reset_default(Some(commit.as_object()), std::iter::once(Path::new(path)))?;
                 return Ok(());
             }
-        }
 
         let entry = self.index_entry_for_path(&index, path);
         index.add_frombuffer(&entry, new_index_content.as_bytes())?;
@@ -127,13 +126,12 @@ impl GitRepo {
         let new_content = reverse_apply_hunk_to_content(workdir_content, hunk, None);
         let full_path = workdir.join(path);
 
-        if let Ok(meta) = std::fs::symlink_metadata(&full_path) {
-            if meta.file_type().is_symlink() {
+        if let Ok(meta) = std::fs::symlink_metadata(&full_path)
+            && meta.file_type().is_symlink() {
                 std::fs::remove_file(&full_path)?;
                 create_symlink(Path::new(&new_content), &full_path)?;
                 return Ok(());
             }
-        }
 
         std::fs::write(&full_path, new_content)?;
         Ok(())

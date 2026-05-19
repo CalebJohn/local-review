@@ -72,11 +72,10 @@ pub fn diff_line_at_row(dc: &DiffContent, target_row: usize) -> Option<DiffLineK
     let mut last: Option<DiffLineKey> = None;
     for hunk in &dc.hunks {
         if hunk.has_header {
-            if target_row == row {
-                if let Some(first) = hunk.lines.first() {
+            if target_row == row
+                && let Some(first) = hunk.lines.first() {
                     return Some((first.kind, first.old_lineno, first.new_lineno));
                 }
-            }
             row += 1;
         }
         for dl in &hunk.lines {

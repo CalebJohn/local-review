@@ -208,20 +208,18 @@ impl App {
     }
 
     fn ensure_diff_matches(&mut self) {
-        if self.search_matches.is_empty() {
-            if let Some(ref pattern) = self.search_pattern {
-                if let Some(dc) = &self.diff_content {
+        if self.search_matches.is_empty()
+            && let Some(ref pattern) = self.search_pattern
+                && let Some(dc) = &self.diff_content {
                     self.search_matches =
                         compute_diff_matches(dc, pattern, self.search_case_sensitive);
                     self.search_match_cursor = None;
                 }
-            }
-        }
     }
 
     fn ensure_sidebar_matches(&mut self) {
-        if self.search_sidebar_matches.is_empty() {
-            if let Some(ref pattern) = self.search_pattern {
+        if self.search_sidebar_matches.is_empty()
+            && let Some(ref pattern) = self.search_pattern {
                 self.search_sidebar_matches = compute_sidebar_matches(
                     &self.staged_files,
                     &self.unstaged_files,
@@ -230,7 +228,6 @@ impl App {
                 );
                 self.search_match_cursor = None;
             }
-        }
     }
 
     fn scroll_to_diff_match(&mut self, match_idx: usize, wrapped: bool) {

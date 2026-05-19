@@ -73,11 +73,10 @@ fn build_header_breadcrumb(
         .iter()
         .enumerate()
         .map(|(i, (_, name, sig, _, _))| {
-            if i == named_scopes.len() - 1 {
-                if let Some(s) = sig {
+            if i == named_scopes.len() - 1
+                && let Some(s) = sig {
                     return s.clone();
                 }
-            }
             name.clone()
         })
         .collect();

@@ -80,16 +80,14 @@ pub fn emit_spans(
             slice_end -= 1;
         }
 
-        if slice_end > byte {
-            if let Some(text) = source.get(byte..slice_end) {
-                if let Some(line_vec) = result.get_mut(line) {
+        if slice_end > byte
+            && let Some(text) = source.get(byte..slice_end)
+                && let Some(line_vec) = result.get_mut(line) {
                     line_vec.push(StyledSpan {
                         text: text.to_string(),
                         style,
                     });
                 }
-            }
-        }
 
         byte = chunk_end;
         line += 1;

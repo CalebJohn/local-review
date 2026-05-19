@@ -333,8 +333,8 @@ impl App {
     }
 
     pub(super) fn restore_hunk_position(&mut self, hunk_idx: usize) {
-        if let Some(dc) = self.diff_content.as_ref() {
-            if !self.show_full_file && !dc.hunks.is_empty() {
+        if let Some(dc) = self.diff_content.as_ref()
+            && !self.show_full_file && !dc.hunks.is_empty() {
                 let clamped = hunk_idx.min(dc.hunks.len() - 1);
                 self.current_hunk_index = Some(clamped);
                 let mut row: u16 = 0;
@@ -344,6 +344,5 @@ impl App {
                 }
                 self.diff_scroll = row;
             }
-        }
     }
 }

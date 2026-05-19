@@ -29,14 +29,13 @@ pub fn apply_hunk_to_content(old_content: &str, hunk: &DiffHunk, selected_lines:
                 }
             }
             ChangeKind::Delete => {
-                if selected_lines.is_some_and(|lines| !lines.contains(&i)) {
-                    if let Some(ln) = line.old_lineno {
+                if selected_lines.is_some_and(|lines| !lines.contains(&i))
+                    && let Some(ln) = line.old_lineno {
                         let idx = (ln as usize).saturating_sub(1);
                         if idx < old_lines.len() {
                             result.push(old_lines[idx]);
                         }
                     }
-                }
             }
         }
     }
@@ -80,14 +79,13 @@ pub fn reverse_apply_hunk_to_content(new_content: &str, hunk: &DiffHunk, selecte
                 }
             }
             ChangeKind::Insert => {
-                if selected_lines.is_some_and(|lines| !lines.contains(&i)) {
-                    if let Some(ln) = line.new_lineno {
+                if selected_lines.is_some_and(|lines| !lines.contains(&i))
+                    && let Some(ln) = line.new_lineno {
                         let idx = (ln as usize).saturating_sub(1);
                         if idx < new_lines.len() {
                             result.push(new_lines[idx]);
                         }
                     }
-                }
             }
         }
     }

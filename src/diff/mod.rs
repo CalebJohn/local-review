@@ -179,16 +179,14 @@ pub fn compute_full_hunks(old: &str, new: &str) -> Vec<DiffHunk> {
         let mut max_old: u32 = hunk.old_start.saturating_sub(1);
         let mut max_new: u32 = hunk.new_start.saturating_sub(1);
         for l in &hunk.lines {
-            if let Some(o) = l.old_lineno {
-                if o > max_old {
+            if let Some(o) = l.old_lineno
+                && o > max_old {
                     max_old = o;
                 }
-            }
-            if let Some(n) = l.new_lineno {
-                if n > max_new {
+            if let Some(n) = l.new_lineno
+                && n > max_new {
                     max_new = n;
                 }
-            }
         }
 
         result.push(hunk);

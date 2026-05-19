@@ -55,14 +55,13 @@ pub fn footer_line<'a>(app: &'a App) -> Line<'a> {
                     if app.semantic_filter { "show all" } else { "filter ws" },
                     desc_style,
                 )]);
-                if app.semantic_filter {
-                    if let Some((visible, total, hidden)) = app.hunk_counts() {
+                if app.semantic_filter
+                    && let Some((visible, total, hidden)) = app.hunk_counts() {
                         spans.extend([sep.clone(), Span::styled(
                             format!("{}/{} ({} hidden)", visible, total, hidden),
                             Style::default().fg(Color::Cyan),
                         )]);
                     }
-                }
             }
         }
         Focus::CommentInput => {

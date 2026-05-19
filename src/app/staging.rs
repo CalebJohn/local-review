@@ -43,8 +43,8 @@ impl App {
             return;
         };
         let entry = self.selected_entry().cloned();
-        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref()) {
-            if let Some(hunk) = dc.hunks.get(hunk_idx) {
+        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref())
+            && let Some(hunk) = dc.hunks.get(hunk_idx) {
                 let old_content = self.repo.index_content(&entry.path)
                     .ok()
                     .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
@@ -65,7 +65,6 @@ impl App {
                     self.restore_hunk_position(hunk_idx);
                 }
             }
-        }
     }
 
     pub(super) fn handle_unstage_hunk(&mut self) {
@@ -77,8 +76,8 @@ impl App {
             return;
         };
         let entry = self.selected_entry().cloned();
-        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref()) {
-            if let Some(hunk) = dc.hunks.get(hunk_idx) {
+        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref())
+            && let Some(hunk) = dc.hunks.get(hunk_idx) {
                 let index_content = self.repo.index_content(&entry.path)
                     .ok()
                     .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
@@ -99,7 +98,6 @@ impl App {
                     self.restore_hunk_position(hunk_idx);
                 }
             }
-        }
     }
 
     pub(super) fn handle_discard_file(&mut self) {
@@ -148,8 +146,8 @@ impl App {
             if self.pending_discard.as_ref() == Some(&pending) {
                 self.pending_discard = None;
                 self.status_message = None;
-                if let Some(dc) = self.diff_content.as_ref() {
-                    if let Some(hunk) = dc.hunks.get(hunk_idx) {
+                if let Some(dc) = self.diff_content.as_ref()
+                    && let Some(hunk) = dc.hunks.get(hunk_idx) {
                         let workdir_content = self.repo.workdir_content(&entry.path)
                             .ok()
                             .and_then(|c| match c { ContentResult::Text(s) => Some(s), _ => None });
@@ -170,7 +168,6 @@ impl App {
                             self.restore_hunk_position(hunk_idx);
                         }
                     }
-                }
             } else {
                 self.pending_discard = Some(pending);
                 self.status_message = Some(
@@ -193,8 +190,8 @@ impl App {
             return;
         };
         let entry = self.selected_entry().cloned();
-        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref()) {
-            if let Some(hunk) = dc.hunks.get(hunk_idx) {
+        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref())
+            && let Some(hunk) = dc.hunks.get(hunk_idx) {
                 let old_content = self.repo.index_content(&entry.path)
                     .ok()
                     .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
@@ -222,7 +219,6 @@ impl App {
                     self.restore_hunk_position(hunk_idx);
                 }
             }
-        }
     }
 
     pub(super) fn handle_unstage_selected_lines(&mut self) {
@@ -238,8 +234,8 @@ impl App {
             return;
         };
         let entry = self.selected_entry().cloned();
-        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref()) {
-            if let Some(hunk) = dc.hunks.get(hunk_idx) {
+        if let (Some(entry), Some(dc)) = (entry, self.diff_content.as_ref())
+            && let Some(hunk) = dc.hunks.get(hunk_idx) {
                 let index_content = self.repo.index_content(&entry.path)
                     .ok()
                     .and_then(|c| match c { ContentResult::Text(s) => Some(s.clone()), _ => None });
@@ -267,7 +263,6 @@ impl App {
                     self.restore_hunk_position(hunk_idx);
                 }
             }
-        }
     }
 
     pub(super) fn handle_undo(&mut self) {
