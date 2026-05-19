@@ -1322,3 +1322,327 @@
 
         let _ = std::fs::remove_dir_all(&tmpdir);
     }
+
+    // ---- pipeline round-trip tests (Phase 1) ----
+    // All use compute_hunks to generate inputs — no hand-built hunks.
+
+    #[test]
+    fn test_roundtrip_single_line_change() {
+        use crate::diff::compute_hunks;
+        let old = "alpha\nbeta\ngamma\n";
+        let new = "alpha\nBETA\ngamma\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_insert_lines() {
+        use crate::diff::compute_hunks;
+        let old = "a\nc\n";
+        let new = "a\nb1\nb2\nc\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_delete_lines() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\nc\nd\n";
+        let new = "a\nd\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_multi_hunk_individual_apply() {
+        use crate::diff::compute_hunks;
+        let old = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nl15\n";
+        let new = "l1\nL2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\nl10\nl11\nl12\nl13\nl14\nL15\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 2);
+
+        let result0 = apply_hunk_to_content(old, &hunks[0], None);
+        assert!(result0.contains("L2"), "Hunk 0 should apply L2 change");
+        assert!(result0.contains("l15"), "Hunk 0 should leave l15 unchanged");
+
+        let result1 = apply_hunk_to_content(old, &hunks[1], None);
+        assert!(result1.contains("l2\n"), "Hunk 1 should leave l2 unchanged");
+        assert!(result1.contains("L15"), "Hunk 1 should apply L15 change");
+
+        let rev0 = reverse_apply_hunk_to_content(new, &hunks[0], None);
+        assert!(rev0.contains("l2\n"), "Reversing hunk 0 should restore l2");
+        assert!(rev0.contains("L15"), "Reversing hunk 0 should keep L15");
+
+        let rev1 = reverse_apply_hunk_to_content(new, &hunks[1], None);
+        assert!(rev1.contains("L2"), "Reversing hunk 1 should keep L2");
+        assert!(rev1.contains("l15"), "Reversing hunk 1 should restore l15");
+    }
+
+    #[test]
+    fn test_roundtrip_no_trailing_newline() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\nc";
+        let new = "a\nX\nc";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_empty_to_content() {
+        use crate::diff::compute_hunks;
+        let old = "";
+        let new = "hello\nworld\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_content_to_empty() {
+        use crate::diff::compute_hunks;
+        let old = "hello\nworld\n";
+        let new = "";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_single_line_file() {
+        use crate::diff::compute_hunks;
+        let old = "only\n";
+        let new = "changed\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_change_at_first_line() {
+        use crate::diff::compute_hunks;
+        let old = "first\nsecond\nthird\n";
+        let new = "FIRST\nsecond\nthird\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_change_at_last_line() {
+        use crate::diff::compute_hunks;
+        let old = "first\nsecond\nthird\n";
+        let new = "first\nsecond\nTHIRD\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    // ---- edge-case round-trips (Phase 3) ----
+
+    #[test]
+    fn test_roundtrip_no_trailing_newline_hunk_adds_one() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb";
+        let new = "a\nb\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert!(!hunks.is_empty());
+        let mut result = old.to_string();
+        for h in &hunks {
+            result = apply_hunk_to_content(&result, h, None);
+        }
+        assert_eq!(result, new);
+    }
+
+    #[test]
+    fn test_roundtrip_trailing_newline_hunk_removes_it() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\n";
+        let new = "a\nb";
+        let hunks = compute_hunks(old, new, 3);
+        assert!(!hunks.is_empty());
+        let mut result = old.to_string();
+        for h in &hunks {
+            result = apply_hunk_to_content(&result, h, None);
+        }
+        assert_eq!(result, new);
+    }
+
+    #[test]
+    fn test_roundtrip_hunk_covers_entire_file() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\nc\n";
+        let new = "x\ny\nz\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    #[test]
+    fn test_roundtrip_multi_hunk_line_count_change() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\no\n";
+        let new = "a\nb\nX\nY\nZ\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\nm\nn\nO\n";
+        let hunks = compute_hunks(old, new, 3);
+        assert!(hunks.len() >= 2, "Expected at least 2 hunks, got {}", hunks.len());
+
+        for (i, h) in hunks.iter().enumerate() {
+            let result = apply_hunk_to_content(old, h, None);
+            assert!(!result.is_empty(), "Hunk {} produced empty result", i);
+        }
+
+        for (i, h) in hunks.iter().enumerate() {
+            let result = reverse_apply_hunk_to_content(new, h, None);
+            assert!(!result.is_empty(), "Reverse hunk {} produced empty result", i);
+        }
+    }
+
+    #[test]
+    fn test_roundtrip_single_line_no_newline() {
+        use crate::diff::compute_hunks;
+        let old = "x";
+        let new = "y";
+        let hunks = compute_hunks(old, new, 3);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(apply_hunk_to_content(old, &hunks[0], None), new);
+        assert_eq!(reverse_apply_hunk_to_content(new, &hunks[0], None), old);
+    }
+
+    // ---- end-to-end staging tests with line filtering (Phase 2) ----
+
+    #[test]
+    fn test_stage_filtered_delete_only() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\nc\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("stage_del", old);
+
+        let workdir = "a\nX\nc\n";
+        std::fs::write(&file_path, workdir).unwrap();
+
+        let hunks = compute_hunks(old, workdir, 3);
+        assert_eq!(hunks.len(), 1);
+
+        let del_idx: Vec<usize> = hunks[0].lines.iter().enumerate()
+            .filter(|(_, l)| l.kind == ChangeKind::Delete)
+            .map(|(i, _)| i)
+            .collect();
+
+        git_repo.stage_hunk("test.txt", old, &hunks[0], Some(&del_idx)).unwrap();
+
+        let index_content = match git_repo.index_content("test.txt").unwrap() {
+            ContentResult::Text(s) => s,
+            other => panic!("Expected Text, got {:?}", other),
+        };
+        assert_eq!(index_content, "a\nc\n", "Index should have b removed, X not added");
+
+        let workdir_after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(workdir_after, workdir, "Workdir should be preserved");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_stage_filtered_insert_only() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\nc\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("stage_ins", old);
+
+        let workdir = "a\nX\nc\n";
+        std::fs::write(&file_path, workdir).unwrap();
+
+        let hunks = compute_hunks(old, workdir, 3);
+        assert_eq!(hunks.len(), 1);
+
+        let ins_idx: Vec<usize> = hunks[0].lines.iter().enumerate()
+            .filter(|(_, l)| l.kind == ChangeKind::Insert)
+            .map(|(i, _)| i)
+            .collect();
+
+        git_repo.stage_hunk("test.txt", old, &hunks[0], Some(&ins_idx)).unwrap();
+
+        let index_content = match git_repo.index_content("test.txt").unwrap() {
+            ContentResult::Text(s) => s,
+            other => panic!("Expected Text, got {:?}", other),
+        };
+        assert_eq!(index_content, "a\nb\nX\nc\n", "Index should keep b and add X");
+
+        let workdir_after = std::fs::read_to_string(&file_path).unwrap();
+        assert_eq!(workdir_after, workdir, "Workdir should be preserved");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_stage_filtered_subset_of_multi_insert() {
+        use crate::diff::compute_hunks;
+        let old = "a\nb\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("stage_multi_ins", old);
+
+        let workdir = "a\nX\nY\nZ\nb\n";
+        std::fs::write(&file_path, workdir).unwrap();
+
+        let hunks = compute_hunks(old, workdir, 3);
+        assert_eq!(hunks.len(), 1);
+
+        let ins_indices: Vec<usize> = hunks[0].lines.iter().enumerate()
+            .filter(|(_, l)| l.kind == ChangeKind::Insert)
+            .map(|(i, _)| i)
+            .collect();
+        assert!(ins_indices.len() >= 2, "Expected multiple inserts");
+
+        git_repo.stage_hunk("test.txt", old, &hunks[0], Some(&ins_indices[..1])).unwrap();
+
+        let index_content = match git_repo.index_content("test.txt").unwrap() {
+            ContentResult::Text(s) => s,
+            other => panic!("Expected Text, got {:?}", other),
+        };
+        assert_eq!(index_content, "a\nX\nb\n", "Only first insert should be staged");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_unstage_filtered_insert_only() {
+        use crate::diff::compute_hunks;
+        let head = "a\nb\nc\n";
+        let (tmpdir, git_repo, file_path) = setup_discard_repo("unstage_ins", head);
+
+        let workdir = "a\nX\nc\n";
+        std::fs::write(&file_path, workdir).unwrap();
+        git_repo.stage_file("test.txt").unwrap();
+
+        let index_content = match git_repo.index_content("test.txt").unwrap() {
+            ContentResult::Text(s) => s,
+            other => panic!("Expected Text, got {:?}", other),
+        };
+        let staged_hunks = compute_hunks(head, &index_content, 3);
+        assert_eq!(staged_hunks.len(), 1);
+
+        let ins_idx: Vec<usize> = staged_hunks[0].lines.iter().enumerate()
+            .filter(|(_, l)| l.kind == ChangeKind::Insert)
+            .map(|(i, _)| i)
+            .collect();
+
+        git_repo.unstage_hunk("test.txt", &index_content, &staged_hunks[0], Some(&ins_idx)).unwrap();
+
+        let index_after = match git_repo.index_content("test.txt").unwrap() {
+            ContentResult::Text(s) => s,
+            other => panic!("Expected Text, got {:?}", other),
+        };
+        assert_eq!(index_after, "a\nc\n", "Unstaging insert should leave delete staged");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
