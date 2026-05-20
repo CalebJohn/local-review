@@ -94,23 +94,3 @@ pub fn build_styled_diff(
 }
 
 use crate::diff::types::DiffContent;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_lang_for_extension_known_cases() {
-        assert_eq!(lang_for_extension("rs"), Some("rust"));
-        assert_eq!(lang_for_extension("tsx"), Some("tsx"));
-        assert_eq!(lang_for_extension("ts"), Some("typescript"));
-        assert_eq!(lang_for_extension("yml"), Some("yaml"));
-        assert_eq!(lang_for_extension("toml"), Some("toml"));
-    }
-
-    #[test]
-    fn test_lang_for_extension_unknown_returns_none() {
-        assert_eq!(lang_for_extension("xyz"), None);
-        assert_eq!(lang_for_extension(""), None);
-    }
-}

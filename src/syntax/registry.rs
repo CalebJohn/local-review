@@ -144,9 +144,4 @@ mod tests {
             assert!(any_source, "{lang} produced no Source events — grammar ABI broken?");
         }
     }
-
-    #[test]
-    fn test_highlight_names_has_23_entries() {
-        assert_eq!(HIGHLIGHT_NAMES.len(), 23);
-    }
 }

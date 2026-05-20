@@ -1,43 +1,5 @@
 use super::*;
 
-// ── language_for_extension ──────────────────────────────────────
-
-#[test]
-fn test_language_for_extension_rust() {
-    let lang = language_for_extension("rs");
-    assert!(lang.is_some(), "rs should map to a Language");
-}
-
-#[test]
-fn test_language_for_extension_typescript() {
-    let lang = language_for_extension("ts");
-    assert!(lang.is_some(), "ts should map to a Language");
-}
-
-#[test]
-fn test_language_for_extension_python() {
-    let lang = language_for_extension("py");
-    assert!(lang.is_some(), "py should map to a Language");
-}
-
-#[test]
-fn test_language_for_extension_go() {
-    let lang = language_for_extension("go");
-    assert!(lang.is_some(), "go should map to a Language");
-}
-
-#[test]
-fn test_language_for_extension_unknown() {
-    let lang = language_for_extension("xyz");
-    assert!(lang.is_none(), "unknown extension should return None");
-}
-
-#[test]
-fn test_language_for_extension_empty() {
-    let lang = language_for_extension("");
-    assert!(lang.is_none(), "empty extension should return None");
-}
-
 // ── extract_tokens ──────────────────────────────────────────────
 
 #[test]

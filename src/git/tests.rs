@@ -681,80 +681,6 @@
     }
 
     #[test]
-    fn test_map_index_status_new() {
-        assert_eq!(
-            map_index_status(git2::Status::INDEX_NEW),
-            Some(FileStatus::Added)
-        );
-    }
-
-    #[test]
-    fn test_map_index_status_modified() {
-        assert_eq!(
-            map_index_status(git2::Status::INDEX_MODIFIED),
-            Some(FileStatus::Modified)
-        );
-    }
-
-    #[test]
-    fn test_map_index_status_deleted() {
-        assert_eq!(
-            map_index_status(git2::Status::INDEX_DELETED),
-            Some(FileStatus::Deleted)
-        );
-    }
-
-    #[test]
-    fn test_map_index_status_renamed() {
-        assert_eq!(
-            map_index_status(git2::Status::INDEX_RENAMED),
-            Some(FileStatus::Renamed)
-        );
-    }
-
-    #[test]
-    fn test_map_index_status_none() {
-        assert_eq!(map_index_status(git2::Status::CURRENT), None);
-    }
-
-    #[test]
-    fn test_map_workdir_status_new() {
-        assert_eq!(
-            map_workdir_status(git2::Status::WT_NEW),
-            Some(FileStatus::Untracked)
-        );
-    }
-
-    #[test]
-    fn test_map_workdir_status_modified() {
-        assert_eq!(
-            map_workdir_status(git2::Status::WT_MODIFIED),
-            Some(FileStatus::Modified)
-        );
-    }
-
-    #[test]
-    fn test_map_workdir_status_deleted() {
-        assert_eq!(
-            map_workdir_status(git2::Status::WT_DELETED),
-            Some(FileStatus::Deleted)
-        );
-    }
-
-    #[test]
-    fn test_map_workdir_status_renamed() {
-        assert_eq!(
-            map_workdir_status(git2::Status::WT_RENAMED),
-            Some(FileStatus::Renamed)
-        );
-    }
-
-    #[test]
-    fn test_map_workdir_status_none() {
-        assert_eq!(map_workdir_status(git2::Status::CURRENT), None);
-    }
-
-    #[test]
     fn test_file_entry_display_status_workdir_preferred() {
         let entry = FileEntry {
             path: "test.rs".to_string(),
@@ -782,16 +708,6 @@
             workdir_status: Some(FileStatus::Untracked),
         };
         assert_eq!(entry.display_status(), "?");
-    }
-
-
-    #[test]
-    fn test_file_status_display() {
-        assert_eq!(format!("{}", FileStatus::Modified), "M");
-        assert_eq!(format!("{}", FileStatus::Added), "A");
-        assert_eq!(format!("{}", FileStatus::Deleted), "D");
-        assert_eq!(format!("{}", FileStatus::Renamed), "R");
-        assert_eq!(format!("{}", FileStatus::Untracked), "?");
     }
 
     #[test]

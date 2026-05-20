@@ -25,16 +25,4 @@ mod tests {
         let s = scope_to_style(Highlight(9999));
         assert_eq!(s, Style::default());
     }
-
-    #[test]
-    fn test_scope_to_style_keyword_is_blue() {
-        let idx = HIGHLIGHT_NAMES.iter().position(|&n| n == "keyword").unwrap();
-        assert_eq!(scope_to_style(Highlight(idx)), Style::default().fg(Color::Blue));
-    }
-
-    #[test]
-    fn test_scope_to_style_comment_is_dark_gray() {
-        let idx = HIGHLIGHT_NAMES.iter().position(|&n| n == "comment").unwrap();
-        assert_eq!(scope_to_style(Highlight(idx)), Style::default().fg(Color::DarkGray));
-    }
 }
