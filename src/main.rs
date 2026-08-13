@@ -1,5 +1,6 @@
 mod app;
 mod classify;
+mod cli;
 mod context;
 mod diff;
 mod git;
@@ -39,6 +40,19 @@ extern "C" fn sigterm_handler(_: libc::c_int) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        println!("{}", cli::usage());
+        return Ok(());
+    }
+    let review_args = match cli::parse_args(&args) {
+        Ok(review) => review,
+        Err(msg) => {
+            eprintln!("{msg}");
+            std::process::exit(2);
+        }
+    };
+
     let original_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let _ = execute!(std::io::stdout(), DisableMouseCapture);
@@ -53,7 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut terminal = ratatui::init();
     execute!(std::io::stdout(), EnableMouseCapture)?;
 
-    let result = run(&mut terminal);
+    let result = run(&mut terminal, review_args);
 
     let _ = execute!(std::io::stdout(), DisableMouseCapture);
     ratatui::restore();
@@ -66,8 +80,8 @@ fn diff_viewport_height(height: u16) -> u16 {
     height.saturating_sub(3)
 }
 
-fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error::Error>> {
-    let mut app = App::new()?;
+fn run(terminal: &mut ratatui::DefaultTerminal, review: Option<cli::ReviewArgs>) -> Result<(), Box<dyn std::error::Error>> {
+    let mut app = App::new(review)?;
 
     // File watcher: watches workdir recursively + .git/index for external git ops
     let (watch_tx, watch_rx) = mpsc::channel();
@@ -234,20 +248,24 @@ fn run(terminal: &mut ratatui::DefaultTerminal) -> Result<(), Box<dyn std::error
                     let rows = Layout::vertical([Constraint::Min(1), Constraint::Length(1)])
                         .split(area);
 
-                    let (staged_area, unstaged_area, diff_rect) = if app.sidebar_collapsed {
-                        (Rect::ZERO, Rect::ZERO, rows[0])
+                    let (review_area, staged_area, unstaged_area, diff_rect) = if app.sidebar_collapsed {
+                        (None, Rect::ZERO, Rect::ZERO, rows[0])
                     } else {
                         let chunks = Layout::horizontal([Constraint::Length(30), Constraint::Min(1)])
                             .split(rows[0]);
-                        let (staged, unstaged) = sidebar_section_areas(
-                            chunks[0],
-                            app.staged_files.len(),
-                            app.unstaged_files.len(),
-                        );
-                        (staged, unstaged, chunks[1])
+                        if app.review.is_some() {
+                            (Some(chunks[0]), Rect::ZERO, Rect::ZERO, chunks[1])
+                        } else {
+                            let (staged, unstaged) = sidebar_section_areas(
+                                chunks[0],
+                                app.staged_files.len(),
+                                app.unstaged_files.len(),
+                            );
+                            (None, staged, unstaged, chunks[1])
+                        }
                     };
 
-                    if let Some(msg) = translate_mouse(mev, staged_area, unstaged_area, diff_rect) {
+                    if let Some(msg) = translate_mouse(mev, review_area, staged_area, unstaged_area, diff_rect) {
                         app.update(msg);
                         dirty = true;
                     }

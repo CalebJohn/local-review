@@ -27,20 +27,16 @@ pub fn compute_diff_matches(
 }
 
 pub fn compute_sidebar_matches(
-    staged: &[FileEntry],
-    unstaged: &[FileEntry],
+    sections: &[(SidebarSection, &[FileEntry])],
     pattern: &str,
     case_sensitive: bool,
 ) -> Vec<(SidebarSection, usize)> {
     let mut matches = Vec::new();
-    for (i, entry) in staged.iter().enumerate() {
-        if contains_match(&entry.path, pattern, case_sensitive) {
-            matches.push((SidebarSection::Staged, i));
-        }
-    }
-    for (i, entry) in unstaged.iter().enumerate() {
-        if contains_match(&entry.path, pattern, case_sensitive) {
-            matches.push((SidebarSection::Unstaged, i));
+    for (section, files) in sections {
+        for (i, entry) in files.iter().enumerate() {
+            if contains_match(&entry.path, pattern, case_sensitive) {
+                matches.push((*section, i));
+            }
         }
     }
     matches
@@ -170,8 +166,7 @@ impl App {
             }
             Focus::Sidebar => {
                 self.search_sidebar_matches = compute_sidebar_matches(
-                    &self.staged_files,
-                    &self.unstaged_files,
+                    &self.sidebar_sections(),
                     &pattern,
                     case_sensitive,
                 );
@@ -207,6 +202,19 @@ impl App {
         self.jump_to_match_in_direction(opposite);
     }
 
+    /// Section/file pairs to search: the single review list in review mode,
+    /// staged+unstaged otherwise.
+    fn sidebar_sections(&self) -> Vec<(SidebarSection, &[FileEntry])> {
+        if self.review.is_some() {
+            vec![(SidebarSection::Review, &self.review_files)]
+        } else {
+            vec![
+                (SidebarSection::Staged, &self.staged_files),
+                (SidebarSection::Unstaged, &self.unstaged_files),
+            ]
+        }
+    }
+
     fn ensure_diff_matches(&mut self) {
         if self.search_matches.is_empty()
             && let Some(ref pattern) = self.search_pattern
@@ -221,8 +229,7 @@ impl App {
         if self.search_sidebar_matches.is_empty()
             && let Some(ref pattern) = self.search_pattern {
                 self.search_sidebar_matches = compute_sidebar_matches(
-                    &self.staged_files,
-                    &self.unstaged_files,
+                    &self.sidebar_sections(),
                     pattern,
                     self.search_case_sensitive,
                 );
@@ -446,7 +453,11 @@ mod tests {
             FileEntry { path: "src/main.rs".to_string(), index_status: None, workdir_status: Some(FileStatus::Modified) },
             FileEntry { path: "tests/test.rs".to_string(), index_status: None, workdir_status: Some(FileStatus::Modified) },
         ];
-        let matches = compute_sidebar_matches(&staged, &unstaged, "main", false);
+        let sections = [
+            (SidebarSection::Staged, staged.as_slice()),
+            (SidebarSection::Unstaged, unstaged.as_slice()),
+        ];
+        let matches = compute_sidebar_matches(&sections, "main", false);
         assert_eq!(matches, vec![(SidebarSection::Staged, 0), (SidebarSection::Unstaged, 0)]);
     }
 
@@ -457,11 +468,15 @@ mod tests {
             FileEntry { path: "readme.txt".to_string(), index_status: Some(FileStatus::Modified), workdir_status: None },
         ];
         let unstaged = vec![];
+        let sections = [
+            (SidebarSection::Staged, staged.as_slice()),
+            (SidebarSection::Unstaged, unstaged.as_slice()),
+        ];
         // lowercase pattern -> case insensitive
-        let matches_lower = compute_sidebar_matches(&staged, &unstaged, "readme", false);
+        let matches_lower = compute_sidebar_matches(&sections, "readme", false);
         assert_eq!(matches_lower.len(), 2);
         // uppercase pattern -> case sensitive
-        let matches_upper = compute_sidebar_matches(&staged, &unstaged, "README", true);
+        let matches_upper = compute_sidebar_matches(&sections, "README", true);
         assert_eq!(matches_upper, vec![(SidebarSection::Staged, 0)]);
     }
 
@@ -473,7 +488,11 @@ mod tests {
         let unstaged = vec![
             FileEntry { path: "a.rs".to_string(), index_status: None, workdir_status: Some(FileStatus::Modified) },
         ];
-        let matches = compute_sidebar_matches(&staged, &unstaged, ".rs", false);
+        let sections = [
+            (SidebarSection::Staged, staged.as_slice()),
+            (SidebarSection::Unstaged, unstaged.as_slice()),
+        ];
+        let matches = compute_sidebar_matches(&sections, ".rs", false);
         assert_eq!(matches, vec![(SidebarSection::Staged, 0), (SidebarSection::Unstaged, 0)]);
     }
 

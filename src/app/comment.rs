@@ -14,6 +14,7 @@ pub fn format_comment(context: &CommentContext, hunk: &DiffHunk, comment: &str) 
     let section_label = match context.section {
         SidebarSection::Staged => "staged",
         SidebarSection::Unstaged => "unstaged",
+        SidebarSection::Review => "review",
     };
 
     let mut out = String::new();

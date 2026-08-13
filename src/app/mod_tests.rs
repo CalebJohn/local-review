@@ -26,6 +26,162 @@
         }
     }
 
+    fn review_entry(path: &str) -> FileEntry {
+        FileEntry {
+            path: path.to_string(),
+            index_status: None,
+            workdir_status: Some(FileStatus::Modified),
+        }
+    }
+
+    fn review_app(files: Vec<FileEntry>) -> App {
+        let mut app = App::test_with_files(vec![]);
+        app.review_files = files;
+        app.sidebar_section = SidebarSection::Review;
+        // Structurally valid but non-resolving target: guards key off
+        // `review.is_some()`, and repo calls on a zero oid fail cleanly.
+        app.review = Some(crate::git::review::ReviewTarget {
+            base_tree: git2::Oid::zero(),
+            head: crate::git::review::ReviewHead::Workdir,
+            label: "test".to_string(),
+        });
+        app
+    }
+
+    // ---- review mode ----
+
+    #[test]
+    fn test_review_mode_move_down_wraps_within_single_list() {
+        let mut app = review_app(vec![review_entry("a.rs"), review_entry("b.rs")]);
+        app.focus = Focus::DiffView;
+        app.update(Message::MoveDown);
+        assert_eq!(app.sidebar_section, SidebarSection::Review);
+        assert_eq!(app.selected_index, 1);
+        // Bottom: wraps to top, never crosses to another section.
+        app.update(Message::MoveDown);
+        assert_eq!(app.sidebar_section, SidebarSection::Review);
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_review_mode_move_up_stays_in_single_list() {
+        let mut app = review_app(vec![review_entry("a.rs"), review_entry("b.rs")]);
+        app.focus = Focus::DiffView;
+        app.sidebar_section = SidebarSection::Review;
+        app.selected_index = 1;
+        app.update(Message::MoveUp);
+        assert_eq!(app.sidebar_section, SidebarSection::Review);
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_review_mode_mouse_click_selects_file() {
+        let mut app = review_app(vec![review_entry("a.rs"), review_entry("b.rs")]);
+        app.update(Message::MouseClickReviewSidebar(1));
+        assert_eq!(app.sidebar_section, SidebarSection::Review);
+        assert_eq!(app.selected_index, 1);
+        assert_eq!(app.focus, Focus::Sidebar);
+    }
+
+    #[test]
+    fn test_review_mode_mouse_click_out_of_bounds_noop() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.update(Message::MouseClickReviewSidebar(5));
+        assert_eq!(app.selected_index, 0);
+    }
+
+    #[test]
+    fn test_review_section_without_target_clears_diff() {
+        // A Review section with no resolved target must degrade to no diff,
+        // never panic.
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.review = None;
+        app.update(Message::SelectFile);
+        app.load_diff_for_selected();
+        assert!(app.diff_content.is_none());
+    }
+
+    // ---- review mode: staging disabled ----
+
+    #[test]
+    fn test_review_mode_stage_file_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        let len_before = app.review_files.len();
+        app.update(Message::StageFile);
+        assert_eq!(app.review_files.len(), len_before, "review file list must be untouched");
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+    }
+
+    #[test]
+    fn test_review_mode_unstage_file_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.update(Message::UnstageFile);
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+    }
+
+    #[test]
+    fn test_review_mode_stage_hunk_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.focus = Focus::DiffView;
+        app.update(Message::StageHunk);
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+    }
+
+    #[test]
+    fn test_review_mode_unstage_hunk_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.focus = Focus::DiffView;
+        app.update(Message::UnstageHunk);
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+    }
+
+    #[test]
+    fn test_review_mode_discard_file_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.update(Message::DiscardFile);
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+    }
+
+    #[test]
+    fn test_review_mode_discard_hunk_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.focus = Focus::DiffView;
+        app.update(Message::DiscardHunk);
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+    }
+
+    #[test]
+    fn test_review_mode_stage_selected_lines_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.mode = AppMode::Visual;
+        app.visual_selection = Some((0, 2));
+        app.update(Message::StageSelectedLines);
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+        assert_eq!(app.mode, AppMode::Visual, "visual mode must survive a blocked staging attempt");
+    }
+
+    #[test]
+    fn test_review_mode_unstage_selected_lines_is_noop_with_message() {
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        app.mode = AppMode::Visual;
+        app.visual_selection = Some((0, 2));
+        app.update(Message::UnstageSelectedLines);
+        assert_eq!(app.status_message.as_deref(), Some("Staging unavailable in review mode"));
+    }
+
+    #[test]
+    fn test_review_mode_undo_and_redo_stay_quiet() {
+        // Undo stack can never be populated in review mode; both must fall
+        // through to the ordinary empty-stack message, never mutate.
+        let mut app = review_app(vec![review_entry("a.rs")]);
+        let len_before = app.review_files.len();
+        app.update(Message::Undo);
+        assert_eq!(app.status_message.as_deref(), Some("Nothing to undo"));
+        app.update(Message::Redo);
+        assert_eq!(app.status_message.as_deref(), Some("Nothing to redo"));
+        assert_eq!(app.review_files.len(), len_before);
+    }
+
 
     #[test]
     fn test_partition_files() {

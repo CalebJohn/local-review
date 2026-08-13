@@ -204,6 +204,16 @@ impl App {
         }
     }
 
+    pub(super) fn handle_mouse_click_review_sidebar(&mut self, idx: usize) {
+        if idx < self.review_files.len() {
+            self.save_cursor_position();
+            self.sidebar_section = SidebarSection::Review;
+            self.selected_index = idx;
+            self.focus = Focus::Sidebar;
+            self.load_diff_for_selected();
+        }
+    }
+
     pub(super) fn handle_focus_diff(&mut self) {
         self.focus = Focus::DiffView;
         self.update_hunk_from_cursor();

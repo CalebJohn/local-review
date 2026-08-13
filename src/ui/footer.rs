@@ -13,13 +13,14 @@ pub fn footer_line<'a>(app: &'a App) -> Line<'a> {
     }
 
     let in_staged = app.sidebar_section == SidebarSection::Staged;
+    let review = app.review.is_some();
 
     let mut spans: Vec<Span> = Vec::new();
     match app.focus {
         Focus::Sidebar => {
             if in_staged {
                 spans.extend([Span::styled(" u ", key_style), Span::styled("unstage", desc_style), sep.clone()]);
-            } else {
+            } else if !review {
                 spans.extend([Span::styled(" s ", key_style), Span::styled("stage", desc_style), sep.clone()]);
                 spans.extend([Span::styled(" d ", key_style), Span::styled("discard", desc_style), sep.clone()]);
             }
@@ -36,7 +37,7 @@ pub fn footer_line<'a>(app: &'a App) -> Line<'a> {
                 spans.extend([Span::styled("[VISUAL]", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)), sep.clone()]);
                 if in_staged {
                     spans.extend([Span::styled(" u ", key_style), Span::styled("unstage", desc_style), sep.clone()]);
-                } else {
+                } else if !review {
                     spans.extend([Span::styled(" s ", key_style), Span::styled("stage", desc_style), sep.clone()]);
                 }
                 spans.extend([Span::styled(" c ", key_style), Span::styled("comment", desc_style), sep.clone()]);
@@ -45,7 +46,7 @@ pub fn footer_line<'a>(app: &'a App) -> Line<'a> {
                 spans.extend([Span::styled(" ]/[ ", key_style), Span::styled("hunks", desc_style), sep.clone()]);
                 if in_staged {
                     spans.extend([Span::styled(" u/U ", key_style), Span::styled("unstage", desc_style), sep.clone()]);
-                } else {
+                } else if !review {
                     spans.extend([Span::styled(" s/S ", key_style), Span::styled("stage", desc_style), sep.clone()]);
                     spans.extend([Span::styled(" d/D ", key_style), Span::styled("discard", desc_style), sep.clone()]);
                 }
@@ -111,6 +112,17 @@ mod tests {
             },
         ]);
         app.sidebar_section = SidebarSection::Unstaged;
+        app
+    }
+
+    fn review_test_app() -> App {
+        let mut app = test_app();
+        app.sidebar_section = SidebarSection::Review;
+        app.review = Some(crate::git::review::ReviewTarget {
+            base_tree: git2::Oid::zero(),
+            head: crate::git::review::ReviewHead::Workdir,
+            label: "main".to_string(),
+        });
         app
     }
 
@@ -273,5 +285,45 @@ mod tests {
         let line = footer_line(&app);
         let text = span_text(&line);
         assert!(text.contains("show all"), "filter toggle label");
+    }
+
+    // ---- review mode: no staging hints ----
+
+    #[test]
+    fn sidebar_review_omits_staging_keys() {
+        let app = review_test_app();
+        let line = footer_line(&app);
+        let text = span_text(&line);
+        assert!(!text.contains("stage"), "no stage hint");
+        assert!(!text.contains("discard"), "no discard hint");
+        assert!(!text.contains("unstage"), "no unstage hint");
+        assert!(text.contains("Enter"), "diff hint stays");
+        assert!(text.contains("edit"), "edit hint stays");
+    }
+
+    #[test]
+    fn diffview_review_omits_staging_keys() {
+        let mut app = review_test_app();
+        app.focus = Focus::DiffView;
+        let line = footer_line(&app);
+        let text = span_text(&line);
+        assert!(!text.contains("s/S"), "no stage hint");
+        assert!(!text.contains("d/D"), "no discard hint");
+        assert!(!text.contains("u/U"), "no unstage hint");
+        assert!(text.contains("hunks"), "hunk keys stay");
+        assert!(text.contains("visual"), "visual key stays");
+    }
+
+    #[test]
+    fn diffview_review_visual_omits_staging_keys() {
+        let mut app = review_test_app();
+        app.focus = Focus::DiffView;
+        app.mode = AppMode::Visual;
+        let line = footer_line(&app);
+        let text = span_text(&line);
+        assert!(!text.contains("stage"), "no stage hint in visual");
+        assert!(!text.contains("unstage"), "no unstage hint in visual");
+        assert!(text.contains("[VISUAL]"), "visual indicator stays");
+        assert!(text.contains("comment"), "comment key stays");
     }
 }

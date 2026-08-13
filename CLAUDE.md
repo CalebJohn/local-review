@@ -35,6 +35,7 @@ Elm architecture: events are translated to `Message` variants, dispatched throug
 
 ```
 main.rs              Event loop: keyboard/mouse -> Message -> app.update() -> ui::view()
+cli.rs               CLI arg parsing for review mode (ReviewArgs, pure, no repo access)
 input.rs             Translate raw crossterm events to Message variants
 
 app/mod.rs           App state + update() thin dispatcher
@@ -49,7 +50,8 @@ ui/sidebar.rs        Sidebar render (staged/unstaged file lists)
 ui/diff_view.rs      Diff view render (hunk headers, change lines, highlighting)
 ui/footer.rs         Context-sensitive footer bar + footer_line() tests
 
-git/mod.rs           GitRepo struct, content retrieval (head/index/workdir)
+git/mod.rs           GitRepo struct, content retrieval (head/index/workdir), content_in_tree helper
+git/review.rs        ReviewTarget/ReviewHead, resolve_review (merge-base), review_files (tree diffs), tree_content
 git/hunk.rs          apply_hunk_to_content, reverse_apply_hunk_to_content
 git/staging.rs       Snapshot types, stage/unstage/discard/snapshot impl methods
 git/status.rs        Binary detection, git2::Status -> FileStatus mappers
@@ -76,10 +78,11 @@ undo.rs              UndoManager with snapshot-based undo/redo
 3. **Diff computation:** `similar::TextDiff::from_lines` with `grouped_ops(3)` produces `Vec<DiffHunk>` with 1-based line numbers.
 4. **Syntax highlighting:** Tree-sitter parses the full old/new files, producing `HashMap<u32, Vec<StyledSpan>>` keyed by line number. Applied only to Equal (context) lines in the diff view; Insert/Delete lines keep their green/red coloring.
 5. **Hunk staging:** Write-stage-restore pattern -- temporarily writes hunk-applied content to workdir, `git add`s it, then restores the original workdir content.
+6. **Review mode (`re <base>`, `re A..B`):** `App::new(review: Option<ReviewArgs>)` resolves a `ReviewTarget` (base tree oid + `ReviewHead::Workdir` or head tree oid) via `cli.rs` -> `resolve_review`. `sidebar_section` is `SidebarSection::Review`; `current_section_files()` reads `review_files` (from `review_files()`, untracked sorted last); `load_file_contents` reads `tree_content(base)` vs `workdir_content`/`tree_content(head)`. All 8 staging/discard handlers early-return with "Staging unavailable in review mode"; undo/redo stay no-ops (stack never populates).
 
 ### Navigation model
 
-Two focus modes: `Sidebar` and `DiffView`. Sidebar has two sections (Staged/Unstaged) with cross-section navigation (j/k wraps between them). Mouse support for clicking files and scrolling diffs.
+Two focus modes: `Sidebar` and `DiffView`. Sidebar has two sections (Staged/Unstaged) with cross-section navigation (j/k wraps between them). Review mode renders a single `SidebarSection::Review` list and j/k wraps within it. Mouse support for clicking files and scrolling diffs.
 
 ## Conventions
 

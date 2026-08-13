@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 
 use crate::classify::{classify_diff, language_for_extension};
+use crate::cli::ReviewArgs;
 use crate::diff::types::DiffContent;
 use crate::diff::{binary_diff_content, compute_diff_content, compute_full_diff_content};
+use crate::git::review::{ReviewHead, ReviewTarget};
 use crate::git::GitRepo;
 use crate::git::types::{ContentResult, FileEntry};
 use crate::syntax::{build_styled_diff, StyledDiffContent};
@@ -45,6 +47,7 @@ pub enum AppMode {
 pub enum SidebarSection {
     Staged,
     Unstaged,
+    Review,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -67,6 +70,7 @@ pub enum Message {
     PrevHunk,
     MouseClickStagedSidebar(usize),
     MouseClickUnstagedSidebar(usize),
+    MouseClickReviewSidebar(usize),
     MouseClickDiffLine(usize),
     MouseDragDiff(usize),
     FocusDiff,
@@ -111,6 +115,8 @@ pub enum Message {
 
 pub struct App {
     pub repo: GitRepo,
+    pub review: Option<ReviewTarget>,
+    pub review_files: Vec<FileEntry>,
     pub staged_files: Vec<FileEntry>,
     pub unstaged_files: Vec<FileEntry>,
     pub selected_index: usize,
@@ -152,12 +158,23 @@ pub struct App {
 }
 
 impl App {
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new(review: Option<ReviewArgs>) -> Result<Self, Box<dyn std::error::Error>> {
         let repo = GitRepo::open(".")?;
+
+        let mut review_target = None;
+        let mut review_files = Vec::new();
+        if let Some(args) = review {
+            let target = repo.resolve_review(&args)?;
+            review_files = repo.review_files(&target)?;
+            review_target = Some(target);
+        }
+
         let all_files = repo.changed_files()?;
         let (staged_files, unstaged_files) = Self::partition_files(&all_files);
 
-        let initial_section = if !staged_files.is_empty() {
+        let initial_section = if review_target.is_some() {
+            SidebarSection::Review
+        } else if !staged_files.is_empty() {
             SidebarSection::Staged
         } else {
             SidebarSection::Unstaged
@@ -165,6 +182,8 @@ impl App {
 
         let mut app = App {
             repo,
+            review: review_target,
+            review_files,
             staged_files,
             unstaged_files,
             selected_index: 0,
@@ -231,6 +250,7 @@ impl App {
         match self.sidebar_section {
             SidebarSection::Staged => &self.staged_files,
             SidebarSection::Unstaged => &self.unstaged_files,
+            SidebarSection::Review => &self.review_files,
         }
     }
 
@@ -300,6 +320,14 @@ impl App {
                 self.repo.index_content(path).ok(),
                 self.repo.workdir_content(path).ok(),
             ),
+            SidebarSection::Review => {
+                let target = self.review.as_ref()?;
+                let new_result = match target.head {
+                    ReviewHead::Workdir => self.repo.workdir_content(path).ok(),
+                    ReviewHead::Commit(tree) => self.repo.tree_content(tree, path).ok(),
+                };
+                (self.repo.tree_content(target.base_tree, path).ok(), new_result)
+            }
         };
         Some((old_result?, new_result?))
     }
@@ -358,6 +386,24 @@ impl App {
         self.formatting_only_cache.clear();
         self.diff_cache.clear();
         self.search_sidebar_matches.clear();
+
+        if self.review.is_some() {
+            let Some(target) = self.review.clone() else { return };
+            if let Ok(files) = self.repo.review_files(&target) {
+                let selected_path = self.selected_entry().map(|e| e.path.clone());
+                self.review_files = files;
+                let len = self.review_files.len();
+                if let Some(ref path) = selected_path {
+                    if let Some(pos) = self.review_files.iter().position(|f| f.path == *path) {
+                        self.selected_index = pos;
+                    } else {
+                        self.selected_index = self.selected_index.min(len.saturating_sub(1));
+                    }
+                }
+            }
+            return;
+        }
+
         if let Ok(all_files) = self.repo.changed_files() {
             let selected_path = self.selected_entry().map(|e| e.path.clone());
             let old_section = self.sidebar_section;
@@ -369,6 +415,9 @@ impl App {
                 let section_files = match old_section {
                     SidebarSection::Staged => &self.staged_files,
                     SidebarSection::Unstaged => &self.unstaged_files,
+                    SidebarSection::Review => {
+                        unreachable!("review branch returns before this path")
+                    }
                 };
                 if let Some(pos) = section_files.iter().position(|f| f.path == *path) {
                     self.selected_index = pos;
@@ -378,6 +427,9 @@ impl App {
                         self.sidebar_section = match old_section {
                             SidebarSection::Staged => SidebarSection::Unstaged,
                             SidebarSection::Unstaged => SidebarSection::Staged,
+                            SidebarSection::Review => {
+                                unreachable!("review branch returns before this path")
+                            }
                         };
                         self.selected_index = 0;
                     } else {
@@ -419,6 +471,7 @@ impl App {
             Message::PrevHunk => self.handle_prev_hunk(),
             Message::MouseClickStagedSidebar(idx) => self.handle_mouse_click_staged_sidebar(idx),
             Message::MouseClickUnstagedSidebar(idx) => self.handle_mouse_click_unstaged_sidebar(idx),
+            Message::MouseClickReviewSidebar(idx) => self.handle_mouse_click_review_sidebar(idx),
             Message::FocusDiff => self.handle_focus_diff(),
             Message::StageFile => self.handle_stage_file(),
             Message::UnstageFile => self.handle_unstage_file(),
@@ -471,6 +524,8 @@ impl App {
         };
         App {
             repo,
+            review: None,
+            review_files: Vec::new(),
             staged_files,
             unstaged_files,
             selected_index: 0,

@@ -5,6 +5,7 @@ A terminal-native git diff review tool. Navigate, stage, and discard changes wit
 ## Features
 
 - **Hunk & line staging** — Stage individual hunks or select arbitrary line ranges.
+- **Branch & commit review** — Diff against a base branch or between two commits, read-only.
 - **Syntax highlighting** — Powered by tree-sitter. Supports Rust, TypeScript, JavaScript, Python, Go, C, C++, JSON, YAML, and TOML.
 - **Live reload** — Automatically refreshes when files or the index change. No manual refresh needed.
 - **Search** — Find text across the current diff. Navigate matches forward and backward.
@@ -37,8 +38,18 @@ Requires Rust 1.75+.
 Run local-review from within a git repository, invoked with `re`.
 
 ```
-re
+re                  Review staged and unstaged changes (default)
+re <base>           Review all changes since diverging from <base> (includes uncommitted)
+re <A>..<B>         Review changes between commits A and B
+re <A> <B>          Same as A..B
+re <A>...<B>        Review changes on B since it diverged from A
 ```
+
+Review mode is read-only: the sidebar becomes a single file list (no Staged/Unstaged
+sections) and staging, unstaging, and discard are disabled. `<base>` may be any
+revspec — a branch name, tag, `HEAD~1`, or SHA. For a PR-style review of committed
+changes only (no uncommitted or untracked files), use `re <base>...HEAD`, e.g.
+`re main...HEAD`.
 
 ### Keybindings
 

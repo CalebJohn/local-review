@@ -52,10 +52,15 @@ pub fn translate_visual_key(key: KeyCode) -> Option<Message> {
     }
 }
 
-pub fn translate_mouse(mev: MouseEvent, staged_area: Rect, unstaged_area: Rect, diff: Rect) -> Option<Message> {
+pub fn translate_mouse(mev: MouseEvent, review_area: Option<Rect>, staged_area: Rect, unstaged_area: Rect, diff: Rect) -> Option<Message> {
     match mev.kind {
         MouseEventKind::Down(MouseButton::Left) => {
-            if rect_contains(staged_area, mev.column, mev.row) {
+            if let Some(area) = review_area
+                && rect_contains(area, mev.column, mev.row)
+            {
+                let idx = mev.row.saturating_sub(area.y.saturating_add(1)) as usize;
+                Some(Message::MouseClickReviewSidebar(idx))
+            } else if rect_contains(staged_area, mev.column, mev.row) {
                 let idx = mev.row.saturating_sub(staged_area.y.saturating_add(1)) as usize;
                 Some(Message::MouseClickStagedSidebar(idx))
             } else if rect_contains(unstaged_area, mev.column, mev.row) {
@@ -146,60 +151,84 @@ mod tests {
     #[test]
     fn test_translate_mouse_click_staged_row_3() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 3);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::MouseClickStagedSidebar(2)));
+    }
+
+    #[test]
+    fn test_translate_mouse_click_review_sidebar() {
+        let review_rect = Rect::new(0, 0, 30, 20);
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 4);
+        assert_eq!(translate_mouse(m, Some(review_rect), Rect::ZERO, Rect::ZERO, diff_rect()),
+                   Some(Message::MouseClickReviewSidebar(3)));
+    }
+
+    #[test]
+    fn test_translate_mouse_review_area_wins_over_staged_area() {
+        let review_rect = Rect::new(0, 0, 30, 20);
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 4);
+        // Even when a staged rect overlaps the same region, the review list wins.
+        assert_eq!(translate_mouse(m, Some(review_rect), staged_rect(), unstaged_rect(), diff_rect()),
+                   Some(Message::MouseClickReviewSidebar(3)));
+    }
+
+    #[test]
+    fn test_translate_mouse_click_outside_review_area_ignored() {
+        let review_rect = Rect::new(0, 0, 30, 20);
+        let m = mouse(MouseEventKind::Down(MouseButton::Left), 200, 200);
+        assert_eq!(translate_mouse(m, Some(review_rect), staged_rect(), unstaged_rect(), diff_rect()), None);
     }
 
     #[test]
     fn test_translate_mouse_click_staged_on_border_is_idx_zero() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 0);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::MouseClickStagedSidebar(0)));
     }
 
     #[test]
     fn test_translate_mouse_click_unstaged() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 5, 13);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::MouseClickUnstagedSidebar(2)));
     }
 
     #[test]
     fn test_translate_mouse_click_diff_is_focus_diff() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 35, 5);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::FocusDiff));
     }
 
     #[test]
     fn test_translate_mouse_scroll_down_on_diff_is_scroll() {
         let m = mouse(MouseEventKind::ScrollDown, 35, 5);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::ScrollDiffDown));
     }
 
     #[test]
     fn test_translate_mouse_scroll_up_on_diff_is_scroll() {
         let m = mouse(MouseEventKind::ScrollUp, 35, 5);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()),
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()),
                    Some(Message::ScrollDiffUp));
     }
 
     #[test]
     fn test_translate_mouse_scroll_on_sidebar_is_noop() {
         let m = mouse(MouseEventKind::ScrollDown, 5, 5);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()), None);
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()), None);
     }
 
     #[test]
     fn test_translate_mouse_drag_is_noop() {
         let m = mouse(MouseEventKind::Drag(MouseButton::Left), 5, 5);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()), None);
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()), None);
     }
 
     #[test]
     fn test_translate_mouse_click_outside_all_rects_is_noop() {
         let m = mouse(MouseEventKind::Down(MouseButton::Left), 200, 200);
-        assert_eq!(translate_mouse(m, staged_rect(), unstaged_rect(), diff_rect()), None);
+        assert_eq!(translate_mouse(m, None, staged_rect(), unstaged_rect(), diff_rect()), None);
     }
 }

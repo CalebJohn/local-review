@@ -3,8 +3,24 @@ use crate::undo::UndoOutcome;
 
 use super::{App, AppMode, PendingDiscard, SidebarSection, NO_ACTIVE_HUNK_MSG};
 
+const REVIEW_READONLY_MSG: &str = "Staging unavailable in review mode";
+
 impl App {
+    /// True when in review mode; also reports it via the status line so the
+    /// user knows why the key did nothing.
+    fn review_readonly(&mut self) -> bool {
+        if self.review.is_some() {
+            self.status_message = Some(REVIEW_READONLY_MSG.to_string());
+            true
+        } else {
+            false
+        }
+    }
+
     pub(super) fn handle_stage_file(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if let Some(entry) = self.selected_entry().cloned() {
             if let Err(e) = self.undo.record(&self.repo, "stage file", std::slice::from_ref(&entry.path)) {
                 self.status_message = Some(format!("Stage failed: {}", e));
@@ -20,6 +36,9 @@ impl App {
     }
 
     pub(super) fn handle_unstage_file(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if let Some(entry) = self.selected_entry().cloned() {
             if let Err(e) = self.undo.record(&self.repo, "unstage file", std::slice::from_ref(&entry.path)) {
                 self.status_message = Some(format!("Unstage failed: {}", e));
@@ -35,6 +54,9 @@ impl App {
     }
 
     pub(super) fn handle_stage_hunk(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
             return;
         }
@@ -68,6 +90,9 @@ impl App {
     }
 
     pub(super) fn handle_unstage_hunk(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if self.sidebar_section != SidebarSection::Staged || self.diff_stale {
             return;
         }
@@ -101,6 +126,9 @@ impl App {
     }
 
     pub(super) fn handle_discard_file(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if self.sidebar_section != SidebarSection::Unstaged {
             return;
         }
@@ -129,6 +157,9 @@ impl App {
     }
 
     pub(super) fn handle_discard_hunk(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
             return;
         }
@@ -178,6 +209,9 @@ impl App {
     }
 
     pub(super) fn handle_stage_selected_lines(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if self.mode != AppMode::Visual || self.sidebar_section != SidebarSection::Unstaged || self.diff_stale {
             return;
         }
@@ -222,6 +256,9 @@ impl App {
     }
 
     pub(super) fn handle_unstage_selected_lines(&mut self) {
+        if self.review_readonly() {
+            return;
+        }
         if self.mode != AppMode::Visual || self.sidebar_section != SidebarSection::Staged || self.diff_stale {
             return;
         }

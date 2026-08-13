@@ -1,4 +1,5 @@
 pub mod hunk;
+pub mod review;
 pub mod staging;
 pub mod status;
 pub mod types;
@@ -66,20 +67,7 @@ impl GitRepo {
             Err(_) => return Ok(ContentResult::NotFound),
         };
         let tree = head.peel_to_tree()?;
-        match tree.get_path(Path::new(path)) {
-            Ok(entry) => {
-                let blob = self.repo.find_blob(entry.id())?;
-                let content = blob.content();
-                if is_binary_content(content) {
-                    Ok(ContentResult::Binary)
-                } else {
-                    Ok(ContentResult::Text(
-                        String::from_utf8_lossy(content).to_string(),
-                    ))
-                }
-            }
-            Err(_) => Ok(ContentResult::NotFound),
-        }
+        content_in_tree(&self.repo, &tree, path)
     }
 
     pub fn index_content(&self, path: &str) -> Result<ContentResult, Box<dyn std::error::Error>> {
@@ -156,6 +144,27 @@ impl GitRepo {
                 path: path.as_bytes().to_vec(),
             }
         }
+    }
+}
+
+pub(crate) fn content_in_tree(
+    repo: &git2::Repository,
+    tree: &git2::Tree,
+    path: &str,
+) -> Result<ContentResult, Box<dyn std::error::Error>> {
+    match tree.get_path(Path::new(path)) {
+        Ok(entry) => {
+            let blob = repo.find_blob(entry.id())?;
+            let content = blob.content();
+            if is_binary_content(content) {
+                Ok(ContentResult::Binary)
+            } else {
+                Ok(ContentResult::Text(
+                    String::from_utf8_lossy(content).to_string(),
+                ))
+            }
+        }
+        Err(_) => Ok(ContentResult::NotFound),
     }
 }
 

@@ -27,9 +27,25 @@ pub fn render_sidebar(
 ) {
     let sidebar_focused = app.focus == crate::app::Focus::Sidebar
         || (app.focus == crate::app::Focus::SearchInput && app.search_origin == crate::app::Focus::Sidebar);
+    let search = app.search_pattern.as_ref().map(|p| (p.as_str(), app.search_case_sensitive));
+
+    if app.review.is_some() {
+        let label = app.review.as_ref().map(|t| t.label.as_str()).unwrap_or("?");
+        let title = format!("Changes vs {label}");
+        render_file_list(frame, area, &FileListProps {
+            files: &app.review_files,
+            title: &title,
+            focused: sidebar_focused,
+            selected: Some(app.selected_index),
+            formatting_only_cache: &app.formatting_only_cache,
+            section: SidebarSection::Review,
+            search_pattern: search,
+        });
+        return;
+    }
+
     let (staged_area, unstaged_area) =
         super::sidebar_section_areas(area, app.staged_files.len(), app.unstaged_files.len());
-    let search = app.search_pattern.as_ref().map(|p| (p.as_str(), app.search_case_sensitive));
 
     for (section, files, area, title) in [
         (SidebarSection::Staged, app.staged_files.as_slice(), staged_area, "Staged"),

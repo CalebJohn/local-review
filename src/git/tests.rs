@@ -1562,3 +1562,216 @@
 
         let _ = std::fs::remove_dir_all(&tmpdir);
     }
+
+    // ---- review mode ----
+
+    use crate::cli::ReviewArgs;
+    use crate::git::review::ReviewHead;
+
+    fn review_repo(dir: &std::path::Path) -> git2::Repository {
+        let repo = git2::Repository::init(dir).expect("init repo");
+        repo.config().unwrap().set_str("user.email", "test@test.com").unwrap();
+        repo.config().unwrap().set_str("user.name", "Test").unwrap();
+        repo
+    }
+
+    fn commit_index(repo: &git2::Repository, update_ref: Option<&str>, msg: &str, parents: &[&git2::Commit]) -> git2::Oid {
+        let tree_id = repo.index().unwrap().write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        let sig = repo.signature().unwrap();
+        repo.commit(update_ref, &sig, &sig, msg, &tree, parents).unwrap()
+    }
+
+    /// Repo with a fork point: main advances past the fork, feature commits off it.
+    /// Workdir ends up containing: base.txt absent, other.txt "feature-change\n",
+    /// new.txt "fresh\n", plus untracked.txt added later by the caller.
+    /// Returns the fork commit's tree oid and the feature commit's oid.
+    fn setup_forked_repo(tmpdir: &std::path::Path) -> (git2::Oid, git2::Oid) {
+        let repo = review_repo(tmpdir);
+
+        std::fs::write(tmpdir.join("base.txt"), "one\n").unwrap();
+        std::fs::write(tmpdir.join("other.txt"), "shared\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("base.txt")).unwrap();
+        index.add_path(Path::new("other.txt")).unwrap();
+        index.write().unwrap();
+        let c0 = commit_index(&repo, Some("refs/heads/main"), "initial", &[]);
+        repo.set_head("refs/heads/main").unwrap();
+        let fork_tree = repo.find_commit(c0).unwrap().tree_id();
+
+        // feature branches off c0; main advances past it
+        repo.branch("feature", &repo.find_commit(c0).unwrap(), false).unwrap();
+        std::fs::write(tmpdir.join("base.txt"), "two\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("base.txt")).unwrap();
+        index.write().unwrap();
+        let c0_commit = repo.find_commit(c0).unwrap();
+        commit_index(&repo, Some("refs/heads/main"), "main advance", &[&c0_commit]);
+
+        // feature commit: modify other.txt, add new.txt, delete base.txt
+        std::fs::write(tmpdir.join("other.txt"), "feature-change\n").unwrap();
+        std::fs::write(tmpdir.join("new.txt"), "fresh\n").unwrap();
+        std::fs::remove_file(tmpdir.join("base.txt")).unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("other.txt")).unwrap();
+        index.add_path(Path::new("new.txt")).unwrap();
+        index.remove_path(Path::new("base.txt")).unwrap();
+        index.write().unwrap();
+        let c2 = commit_index(&repo, Some("refs/heads/feature"), "feature work", &[&c0_commit]);
+        repo.set_head("refs/heads/feature").unwrap();
+
+        (fork_tree, c2)
+    }
+
+    #[test]
+    fn test_review_single_ref_uses_merge_base_vs_workdir() {
+        let tmpdir = std::env::temp_dir().join(format!("review_single_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+        let (fork_tree, _) = setup_forked_repo(&tmpdir);
+        std::fs::write(tmpdir.join("untracked.txt"), "u\n").unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let target = git_repo.resolve_review(&ReviewArgs::SingleRef("main".into())).unwrap();
+
+        // Base must be the fork point, not main's tip (which contains "two\n").
+        assert_eq!(target.base_tree, fork_tree, "merge-base of main and HEAD should be the fork commit");
+        assert!(matches!(target.head, ReviewHead::Workdir));
+
+        let files = git_repo.review_files(&target).unwrap();
+        let statuses: Vec<(String, String)> = files.iter()
+            .map(|f| (f.path.clone(), f.workdir_status.unwrap().as_str().to_string()))
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![
+                ("base.txt".to_string(), "D".to_string()),
+                ("new.txt".to_string(), "A".to_string()),
+                ("other.txt".to_string(), "M".to_string()),
+                ("untracked.txt".to_string(), "?".to_string()),
+            ],
+            "workdir vs fork: deleted + modified + added + untracked, untracked last"
+        );
+        assert!(files.iter().all(|f| f.index_status.is_none()));
+
+        // Base side content comes from the fork tree.
+        match git_repo.tree_content(target.base_tree, "base.txt").unwrap() {
+            ContentResult::Text(s) => assert_eq!(s, "one\n"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+        assert!(matches!(
+            git_repo.tree_content(target.base_tree, "new.txt").unwrap(),
+            ContentResult::NotFound
+        ));
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_review_range_two_dot_compares_trees() {
+        let tmpdir = std::env::temp_dir().join(format!("review_range_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+        let (_, c2) = setup_forked_repo(&tmpdir);
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let target = git_repo
+            .resolve_review(&ReviewArgs::Range {
+                from: "main".into(),
+                to: "feature".into(),
+                three_dot: false,
+            })
+            .unwrap();
+
+        // Two-dot: base is main's tip (contains "two\n").
+        let main_tip_tree = {
+            let repo = git2::Repository::open(&tmpdir).unwrap();
+            let main = repo.find_branch("main", git2::BranchType::Local).unwrap();
+            main.get().peel_to_commit().unwrap().tree_id()
+        };
+        let c2_tree = {
+            let repo = git2::Repository::open(&tmpdir).unwrap();
+            repo.find_commit(c2).unwrap().tree_id()
+        };
+        assert_eq!(target.base_tree, main_tip_tree);
+        assert!(matches!(target.head, ReviewHead::Commit(oid) if oid == c2_tree));
+
+        let files = git_repo.review_files(&target).unwrap();
+        let statuses: Vec<(String, String)> = files.iter()
+            .map(|f| (f.path.clone(), f.workdir_status.unwrap().as_str().to_string()))
+            .collect();
+        assert_eq!(
+            statuses,
+            vec![
+                ("base.txt".to_string(), "D".to_string()),
+                ("new.txt".to_string(), "A".to_string()),
+                ("other.txt".to_string(), "M".to_string()),
+            ]
+        );
+
+        // Content sides from both trees.
+        match git_repo.tree_content(target.base_tree, "base.txt").unwrap() {
+            ContentResult::Text(s) => assert_eq!(s, "two\n"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+        assert!(matches!(
+            git_repo.tree_content(target.base_tree, "new.txt").unwrap(),
+            ContentResult::NotFound
+        ));
+        match git_repo.tree_content(c2_tree, "new.txt").unwrap() {
+            ContentResult::Text(s) => assert_eq!(s, "fresh\n"),
+            other => panic!("expected Text, got {:?}", other),
+        }
+        assert!(matches!(
+            git_repo.tree_content(c2_tree, "base.txt").unwrap(),
+            ContentResult::NotFound
+        ));
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_review_range_three_dot_uses_merge_base() {
+        let tmpdir = std::env::temp_dir().join(format!("review_3dot_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+        let (fork_tree, _) = setup_forked_repo(&tmpdir);
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let target = git_repo
+            .resolve_review(&ReviewArgs::Range {
+                from: "main".into(),
+                to: "feature".into(),
+                three_dot: true,
+            })
+            .unwrap();
+        assert_eq!(target.base_tree, fork_tree, "three-dot base is the merge-base");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
+
+    #[test]
+    fn test_review_missing_merge_base_and_unknown_ref_error() {
+        let tmpdir = std::env::temp_dir().join(format!("review_err_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmpdir);
+        let repo = review_repo(&tmpdir);
+
+        std::fs::write(tmpdir.join("a.txt"), "a\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(Path::new("a.txt")).unwrap();
+        index.write().unwrap();
+        commit_index(&repo, Some("refs/heads/main"), "initial", &[]);
+        repo.set_head("refs/heads/main").unwrap();
+
+        // Orphan root commit on another ref: no common history with main.
+        let sig = repo.signature().unwrap();
+        let tree = repo.index().unwrap().write_tree().unwrap();
+        repo.commit(Some("refs/heads/orphan"), &sig, &sig, "orphan", &repo.find_tree(tree).unwrap(), &[])
+            .unwrap();
+
+        let git_repo = GitRepo::open(tmpdir.to_str().unwrap()).unwrap();
+        let err = git_repo.resolve_review(&ReviewArgs::SingleRef("orphan".into())).unwrap_err();
+        assert!(err.to_string().contains("no merge base"), "got: {err}");
+
+        let err = git_repo.resolve_review(&ReviewArgs::SingleRef("does-not-exist".into())).unwrap_err();
+        assert!(err.to_string().contains("does-not-exist"), "got: {err}");
+
+        let _ = std::fs::remove_dir_all(&tmpdir);
+    }
